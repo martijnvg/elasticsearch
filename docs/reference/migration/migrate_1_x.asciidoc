@@ -1,0 +1,29 @@
+[[breaking-minor-changes]]
+= Breaking changes between 1.x releases
+
+[partintro]
+--
+This section discusses the changes that you need to be aware of when migrating
+your application from Elasticsearch 1.x to Elasticsearch 1.y.
+--
+
+== Facets
+
+Facets are deprecated and will be removed in a future release. You are
+encouraged to migrate to <<search-aggregations, aggregations>> instead.
+
+== 1.4.0
+
+=== Percolator
+
+The percolator requires that on new indices created on or after version `1.4.0` the field names referred in queries do
+exists in the mapping associated with the index. There are two ways to make sure that a field mapping exist:
+* Add or update a mapping via the mappings apis.
+* Percolate a document before registering a query. The percolate api just like the index can introduce new fields in the
+mappings dynamically.
+
+=== Aliases
+
+Fields in alias filters pointing to an index created on version `1.4.0` or later need to exist in the mappings. For new
+indices either create an index with the mappings for required fields or update an existing mapping to have the required
+field definitions.

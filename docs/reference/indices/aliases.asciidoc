@@ -69,15 +69,39 @@ It is an error to index to an alias which points to more than one index.
 [[filtered]]
 === Filtered Aliases
 
+[float]
+==== Note for 1.4 and later
+
+Fields in alias filters pointing to a index created on version `1.4.0` or later
+need to exist in the mappings.
+
 Aliases with filters provide an easy way to create different "views" of
 the same index. The filter can be defined using Query DSL and is applied
 to all Search, Count, Delete By Query and More Like This operations with
 this alias. Here is an example:
 
+First if not already exists the field the filter is referring to:
+
 [source,js]
 --------------------------------------------------
-curl -XPOST 'http://localhost:9200/_aliases' -d '
-{
+curl -XPUT 'http://localhost:9200/test1' -d '{
+  "mappings": {
+    "type1": {
+      "properties": {
+        "user" : {
+          "type": "string",
+          "index": "not_analyzed"
+        }
+      }
+    }
+  }
+}
+
+Add an filtered alias:
+
+[source,js]
+--------------------------------------------------
+curl -XPOST 'http://localhost:9200/_aliases' -d '{
     "actions" : [
         {
             "add" : {
@@ -182,6 +206,23 @@ curl -XPUT 'localhost:9200/logs_201305/_alias/2013'
 
 Adding user alias:
 
+If not already exists create the index with field `user_id`:
+
+[source,js]
+--------------------------------------------------
+curl -XPUT 'localhost:9200/users' -d '{
+    "mappings" : {
+        "user" : {
+            "properties" : {
+                "user_id" : {"type" : "integer"}
+            }
+        }
+    }
+}'
+--------------------------------------------------
+
+Add the alias for a specific user:
+
 [source,js]
 --------------------------------------------------
 curl -XPUT 'localhost:9200/users/_alias/user_12' -d '{
@@ -205,6 +246,13 @@ Aliases can also be specified during <<create-index-aliases,index creation>>:
 [source,js]
 --------------------------------------------------
 curl -XPUT localhost:9200/logs_20142801 -d '{
+    "mappings" : {
+        "type" : {
+            "properties" : {
+                "year" : {"type" : "integer"}
+            }
+        }
+    },
     "aliases" : {
         "current_day" : {},
         "2014" : {

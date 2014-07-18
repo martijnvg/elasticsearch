@@ -16,7 +16,43 @@ The percolator and most of its features work in realtime, so once a percolate qu
 in the percolate api.
 
 [float]
+=== Note for 1.4 and later
+
+The percolator requires that on new indices created on or after version `1.4.0` the field names referred in queries do
+exists in the mapping associated with the index. There are two ways to make sure that a field mapping exist:
+* Add or update a mapping via the mappings apis.
+* Percolate a document before registering a query. The percolate api just like the index can introduce new fields in the
+mappings dynamically.
+
+The reason that a field mapping needs to exist in the mapping is that query parsing relies heavily on the mapping. For
+example if a percolator query contains a range query with the field field `price`, that range gets interpreted as a
+lexicographic range instead of a numeric range. Field types can't be detected from queries, but only from documents.
+Other examples of fields that require field mappings in the percolator:
+* Any string field with custom analyzers.
+* Not analyzed string fields,
+* Geo shapes
+* Geo points
+* Nested object field mappings
+
+[float]
 === Sample usage
+
+Create index, that contains a mapping for the field `message`:
+
+[source,js]
+--------------------------------------------------
+curl -XPUT 'localhost:9200/my-index' -d '{
+  "mappings": {
+    "my-type": {
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+--------------------------------------------------
 
 Adding a query to the percolator:
 

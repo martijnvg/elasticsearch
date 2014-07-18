@@ -63,3 +63,11 @@ root and inner object types:
     }
 }
 --------------------------------------------------
+
+== Unmapped fields in queries
+
+coming[1.4.0]
+
+Except for queries and filter defined in filtered aliases or percolator queries, referring the field names not existing
+in the mappings is allowed. Whether unmapped fields are allowed in queries or filters can be controlled via the
+following the `index.query.parse.allow_unmapped_fields` index setting.

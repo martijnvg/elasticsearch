@@ -69,18 +69,15 @@ It is an error to index to an alias which points to more than one index.
 [[filtered]]
 === Filtered Aliases
 
-[float]
-==== Note for 1.4 and later
-
-Fields in alias filters pointing to a index created on version `1.4.0` or later
-need to exist in the mappings.
-
 Aliases with filters provide an easy way to create different "views" of
 the same index. The filter can be defined using Query DSL and is applied
 to all Search, Count, Delete By Query and More Like This operations with
-this alias. Here is an example:
+this alias.
 
-First if not already exists the field the filter is referring to:
+coming[1.4.0,Fields referred to in alias filters must exist in the mappings of the index/indices pointed to by the alias]
+
+To create a filtered alias, first we need to ensure that the fields already
+exist in the mapping:
 
 [source,js]
 --------------------------------------------------
@@ -96,8 +93,9 @@ curl -XPUT 'http://localhost:9200/test1' -d '{
     }
   }
 }
+--------------------------------------------------
 
-Add an filtered alias:
+Now we can create an alias that uses a filter on field `user`:
 
 [source,js]
 --------------------------------------------------
@@ -197,16 +195,19 @@ You can also use the plural `_aliases`.
 [float]
 ==== Examples:
 
-Adding time based alias:
-
+Adding time based alias::
++
+--
 [source,js]
 --------------------------------------------------
 curl -XPUT 'localhost:9200/logs_201305/_alias/2013'
 --------------------------------------------------
+--
 
-Adding user alias:
-
-If not already exists create the index with field `user_id`:
+Adding a user alias::
++
+--
+First create the index and add a mapping for the `user_id` field:
 
 [source,js]
 --------------------------------------------------
@@ -221,7 +222,7 @@ curl -XPUT 'localhost:9200/users' -d '{
 }'
 --------------------------------------------------
 
-Add the alias for a specific user:
+Then add the alias for a specific user:
 
 [source,js]
 --------------------------------------------------
@@ -234,6 +235,8 @@ curl -XPUT 'localhost:9200/users/_alias/user_12' -d '{
     }
 }'
 --------------------------------------------------
+
+--
 
 [float]
 [[alias-index-creation]]

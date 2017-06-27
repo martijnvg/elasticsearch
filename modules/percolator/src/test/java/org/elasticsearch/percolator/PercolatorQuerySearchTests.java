@@ -21,6 +21,7 @@ package org.elasticsearch.percolator;
 import org.apache.lucene.search.join.ScoreMode;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.support.WriteRequest;
+import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
@@ -78,8 +79,7 @@ public class PercolatorQuerySearchTests extends ESSingleNodeTestCase {
             .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
             .execute().actionGet();
         SearchResponse response = client().prepareSearch("index")
-            .setQuery(new PercolateQueryBuilder("query", jsonBuilder().startObject().field("field1", "b").endObject().bytes(),
-                XContentType.JSON))
+            .setQuery(percolateQuery("query", jsonBuilder().startObject().field("field1", "b").endObject().bytes()))
             .get();
         assertHitCount(response, 1);
         assertSearchHits(response, "1");
@@ -106,14 +106,14 @@ public class PercolatorQuerySearchTests extends ESSingleNodeTestCase {
 
         for (int i = 0; i < 32; i++) {
             SearchResponse response = client().prepareSearch()
-                .setQuery(new PercolateQueryBuilder("query",
+                .setQuery(percolateQuery("query",
                     XContentFactory.jsonBuilder()
                         .startObject().field("companyname", "stark")
                         .startArray("employee")
                         .startObject().field("name", "virginia potts").endObject()
                         .startObject().field("name", "tony stark").endObject()
                         .endArray()
-                        .endObject().bytes(), XContentType.JSON))
+                        .endObject().bytes()))
                 .addSort("_doc", SortOrder.ASC)
                 // size 0, because other wise load bitsets for normal document in FetchPhase#findRootDocumentIfNested(...)
                 .setSize(0)
@@ -191,7 +191,7 @@ public class PercolatorQuerySearchTests extends ESSingleNodeTestCase {
         doc.endObject();
         for (int i = 0; i < 32; i++) {
             SearchResponse response = client().prepareSearch()
-                .setQuery(new PercolateQueryBuilder("query", doc.bytes(), XContentType.JSON))
+                .setQuery(percolateQuery("query", doc.bytes()))
                 .addSort("_doc", SortOrder.ASC)
                 .get();
             assertHitCount(response, 1);
@@ -200,6 +200,13 @@ public class PercolatorQuerySearchTests extends ESSingleNodeTestCase {
         long fieldDataSize = client().admin().cluster().prepareClusterStats().get()
             .getIndicesStats().getFieldData().getMemorySizeInBytes();
         assertEquals("The percolator works with in-memory index and therefor shouldn't use field-data cache", 0L, fieldDataSize);
+    }
+
+    PercolateQueryBuilder percolateQuery(String field, BytesReference document) {
+        PercolatorQueryCache percolatorQueryCache = getInstanceFromNode(PercolatorQueryCache.class);
+        PercolateQueryBuilder percolateQueryBuilder = new PercolateQueryBuilder(field, document, XContentType.JSON);
+        percolateQueryBuilder.setPercolatorQueryCache(percolatorQueryCache);
+        return percolateQueryBuilder;
     }
 
 }

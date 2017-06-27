@@ -19,14 +19,21 @@
 
 package org.elasticsearch.percolator;
 
+import org.elasticsearch.client.Client;
+import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.index.mapper.Mapper;
 import org.elasticsearch.plugins.MapperPlugin;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.plugins.SearchPlugin;
+import org.elasticsearch.script.ScriptService;
 import org.elasticsearch.search.fetch.FetchSubPhase;
+import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.watcher.ResourceWatcherService;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -36,14 +43,35 @@ import static java.util.Collections.singletonList;
 public class PercolatorPlugin extends Plugin implements MapperPlugin, SearchPlugin {
 
     private final Settings settings;
+    private PercolatorQueryCache percolatorQueryCache;
 
     public PercolatorPlugin(Settings settings) {
         this.settings = settings;
     }
 
     @Override
+    public Collection<Object> createComponents(Client client, ClusterService clusterService, ThreadPool threadPool,
+                                               ResourceWatcherService resourceWatcherService, ScriptService scriptService,
+                                               NamedXContentRegistry xContentRegistry) {
+        percolatorQueryCache = new PercolatorQueryCache(settings, threadPool);
+        return Collections.singleton(percolatorQueryCache);
+    }
+
+    @Override
     public List<QuerySpec<?>> getQueries() {
-        return singletonList(new QuerySpec<>(PercolateQueryBuilder.NAME, PercolateQueryBuilder::new, PercolateQueryBuilder::fromXContent));
+        return singletonList(new QuerySpec<>(
+            PercolateQueryBuilder.NAME,
+            in -> {
+                PercolateQueryBuilder percolateQueryBuilder = new PercolateQueryBuilder(in);
+                percolateQueryBuilder.setPercolatorQueryCache(percolatorQueryCache);
+                return percolateQueryBuilder;
+            },
+            parseContext -> {
+                PercolateQueryBuilder percolateQueryBuilder = PercolateQueryBuilder.fromXContent(parseContext);
+                percolateQueryBuilder.setPercolatorQueryCache(percolatorQueryCache);
+                return percolateQueryBuilder;
+            })
+        );
     }
 
     @Override

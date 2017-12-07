@@ -225,6 +225,10 @@ public class FetchSourceContext implements Writeable, ToXContentObject {
         return result;
     }
 
+    public String toString() {
+        return Strings.toString(this);
+    }
+
     /**
      * Returns a filter function that expects the source map as an input and returns
      * the filtered map.

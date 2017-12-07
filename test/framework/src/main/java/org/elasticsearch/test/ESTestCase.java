@@ -951,14 +951,29 @@ public abstract class ESTestCase extends LuceneTestCase {
             xContentBuilder.prettyPrint();
         }
         Token token = parser.currentToken() == null ? parser.nextToken() : parser.currentToken();
-        if (token == Token.START_ARRAY) {
+        if (token.isValue()) {
+            // There is nothing to shuffle so just copy the value:
+            if (token == Token.VALUE_NULL) {
+                xContentBuilder.nullValue();
+            } else if (token == Token.VALUE_BOOLEAN) {
+                xContentBuilder.value(parser.booleanValue());
+            } else if (token == Token.VALUE_NUMBER) {
+                xContentBuilder.value(parser.numberValue());
+            } else if (token == Token.VALUE_STRING) {
+                xContentBuilder.value(parser.text());
+            } else {
+                throw new IllegalArgumentException("unsupported token [" + token + "]");
+            }
+            return xContentBuilder;
+        } else if (token == Token.START_ARRAY) {
             List<Object> shuffledList = shuffleList(parser.listOrderedMap(), new HashSet<>(Arrays.asList(exceptFieldNames)));
             return xContentBuilder.value(shuffledList);
+        } else {
+            //we need a sorted map for reproducibility, as we are going to shuffle its keys and write XContent back
+            Map<String, Object> shuffledMap = shuffleMap((LinkedHashMap<String, Object>)parser.mapOrdered(),
+                    new HashSet<>(Arrays.asList(exceptFieldNames)));
+            return xContentBuilder.map(shuffledMap);
         }
-        //we need a sorted map for reproducibility, as we are going to shuffle its keys and write XContent back
-        Map<String, Object> shuffledMap = shuffleMap((LinkedHashMap<String, Object>)parser.mapOrdered(),
-            new HashSet<>(Arrays.asList(exceptFieldNames)));
-        return xContentBuilder.map(shuffledMap);
     }
 
     // shuffle fields of objects in the list, but not the list itself

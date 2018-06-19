@@ -6,15 +6,16 @@
 package org.elasticsearch.xpack.ccr.action;
 
 import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.Action;
 import org.elasticsearch.action.ActionListener;
-import org.elasticsearch.action.admin.cluster.state.ClusterStateRequest;
-import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionRequestBuilder;
 import org.elasticsearch.action.ActionResponse;
+import org.elasticsearch.action.NoShardAvailableActionException;
+import org.elasticsearch.action.UnavailableShardsException;
+import org.elasticsearch.action.admin.cluster.state.ClusterStateRequest;
+import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest;
 import org.elasticsearch.action.admin.indices.stats.IndexStats;
 import org.elasticsearch.action.admin.indices.stats.IndicesStatsRequest;
 import org.elasticsearch.action.admin.indices.stats.ShardStats;
@@ -28,36 +29,38 @@ import org.elasticsearch.cluster.routing.IndexRoutingTable;
 import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.NetworkExceptionHelper;
+import org.elasticsearch.common.unit.ByteSizeUnit;
 import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.common.util.concurrent.AbstractRunnable;
-import org.elasticsearch.common.util.concurrent.CountDown;
+import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.Index;
-import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.index.translog.Translog;
+import org.elasticsearch.node.NodeClosedException;
 import org.elasticsearch.persistent.AllocatedPersistentTask;
 import org.elasticsearch.persistent.PersistentTaskState;
 import org.elasticsearch.persistent.PersistentTasksCustomMetaData;
 import org.elasticsearch.persistent.PersistentTasksExecutor;
 import org.elasticsearch.tasks.TaskId;
 import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.transport.ActionTransportException;
 import org.elasticsearch.xpack.ccr.Ccr;
 import org.elasticsearch.xpack.ccr.action.bulk.BulkShardOperationsAction;
 import org.elasticsearch.xpack.ccr.action.bulk.BulkShardOperationsRequest;
 import org.elasticsearch.xpack.ccr.action.bulk.BulkShardOperationsResponse;
 
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Semaphore;
+import java.util.Set;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import java.util.function.Supplier;
@@ -65,9 +68,9 @@ import java.util.stream.Collectors;
 
 public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollowTask> {
 
-    static final long DEFAULT_BATCH_SIZE = 1024;
-    static final int PROCESSOR_RETRY_LIMIT = 16;
-    static final int DEFAULT_CONCURRENT_PROCESSORS = 1;
+    static final long DEFAULT_MAX_READ_SIZE = 1024;
+    static final int PROCESSOR_RETRY_LIMIT = 5;
+    static final int DEFAULT_MAX_CONCURRENT_READS = 5;
     static final long DEFAULT_MAX_TRANSLOG_BYTES= Long.MAX_VALUE;
     private static final TimeValue RETRY_TIMEOUT = TimeValue.timeValueMillis(500);
 
@@ -113,70 +116,20 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
         IndexMetadataVersionChecker imdVersionChecker = new IndexMetadataVersionChecker(params.getLeaderShardId().getIndex(),
                 params.getFollowShardId().getIndex(), client, leaderClient);
         logger.info("[{}] initial leader mapping with follower mapping syncing", params);
+        BiFunction<TimeValue, Runnable, ScheduledFuture<?>> scheduler =
+            (delay, command) -> threadPool.schedule(delay, ThreadPool.Names.GENERIC, command);
+        ShardFollowTracker tracker =
+            new ShardFollowTracker(leaderClient, followerClient, scheduler, imdVersionChecker, params, shardFollowNodeTask);
         imdVersionChecker.updateMapping(1L /* Force update, version is initially 0L */, e -> {
             if (e == null) {
                 logger.info("Starting shard following [{}]", params);
                 fetchGlobalCheckpoint(followerClient, params.getFollowShardId(),
                         followGlobalCheckPoint -> {
                             shardFollowNodeTask.updateProcessedGlobalCheckpoint(followGlobalCheckPoint);
-                            prepare(leaderClient, followerClient, shardFollowNodeTask, params, followGlobalCheckPoint, imdVersionChecker);
+                            tracker.start(followGlobalCheckPoint);
                         }, task::markAsFailed);
             } else {
                 shardFollowNodeTask.markAsFailed(e);
-            }
-        });
-    }
-
-    void prepare(Client leaderClient, Client followerClient, ShardFollowNodeTask task, ShardFollowTask params,
-                 long followGlobalCheckPoint,
-                 IndexMetadataVersionChecker imdVersionChecker) {
-        if (task.isRunning() == false) {
-            // TODO: need better cancellation control
-            return;
-        }
-
-        final ShardId leaderShard = params.getLeaderShardId();
-        final ShardId followerShard = params.getFollowShardId();
-        fetchGlobalCheckpoint(leaderClient, leaderShard, leaderGlobalCheckPoint -> {
-            // TODO: check if both indices have the same history uuid
-            if (leaderGlobalCheckPoint == followGlobalCheckPoint) {
-                logger.debug("{} no write operations to fetch", followerShard);
-                retry(leaderClient, followerClient, task, params, followGlobalCheckPoint, imdVersionChecker);
-            } else {
-                assert followGlobalCheckPoint < leaderGlobalCheckPoint : "followGlobalCheckPoint [" + followGlobalCheckPoint +
-                        "] is not below leaderGlobalCheckPoint [" + leaderGlobalCheckPoint + "]";
-                logger.debug("{} fetching write operations, leaderGlobalCheckPoint={}, followGlobalCheckPoint={}", followerShard,
-                    leaderGlobalCheckPoint, followGlobalCheckPoint);
-                Executor ccrExecutor = threadPool.executor(Ccr.CCR_THREAD_POOL_NAME);
-                Consumer<Exception> handler = e -> {
-                    if (e == null) {
-                        task.updateProcessedGlobalCheckpoint(leaderGlobalCheckPoint);
-                        prepare(leaderClient, followerClient, task, params, leaderGlobalCheckPoint, imdVersionChecker);
-                    } else {
-                        task.markAsFailed(e);
-                    }
-                };
-                ChunksCoordinator coordinator = new ChunksCoordinator(followerClient, leaderClient, ccrExecutor, imdVersionChecker,
-                    params.getMaxChunkSize(), params.getNumConcurrentChunks(), params.getProcessorMaxTranslogBytes(), leaderShard,
-                    followerShard, handler);
-                coordinator.createChucks(followGlobalCheckPoint, leaderGlobalCheckPoint);
-                coordinator.start();
-            }
-        }, task::markAsFailed);
-    }
-
-    private void retry(Client leaderClient, Client followerClient, ShardFollowNodeTask task, ShardFollowTask params,
-                       long followGlobalCheckPoint,
-                       IndexMetadataVersionChecker imdVersionChecker) {
-        threadPool.schedule(RETRY_TIMEOUT, Ccr.CCR_THREAD_POOL_NAME, new AbstractRunnable() {
-            @Override
-            public void onFailure(Exception e) {
-                task.markAsFailed(e);
-            }
-
-            @Override
-            protected void doRun() throws Exception {
-                prepare(leaderClient, followerClient, task, params, followGlobalCheckPoint, imdVersionChecker);
             }
         });
     }
@@ -198,224 +151,176 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
         }, errorHandler));
     }
 
-    static class ChunksCoordinator {
+    static class ShardFollowTracker {
 
-        private static final Logger LOGGER = Loggers.getLogger(ChunksCoordinator.class);
+        private static final Logger LOGGER = Loggers.getLogger(ShardFollowTracker.class);
 
-        private final Client followerClient;
         private final Client leaderClient;
-        private final Executor ccrExecutor;
-        private final IndexMetadataVersionChecker imdVersionChecker;
+        private final Client followerClient;
+        private final BiFunction<TimeValue, Runnable, ScheduledFuture<?>> scheduler;
+        private final BiConsumer<Long, Consumer<Exception>> versionChecker;
 
-        private final long batchSize;
-        private final int concurrentProcessors;
-        private final long processorMaxTranslogBytes;
-        private final ShardId leaderShard;
-        private final ShardId followerShard;
-        private final Consumer<Exception> handler;
+        private final ShardFollowTask params;
+        private final ShardFollowNodeTask nodeTask;
 
-        private final CountDown countDown;
-        private final Queue<long[]> chunks = new ConcurrentLinkedQueue<>();
-        private final AtomicReference<Exception> failureHolder = new AtomicReference<>();
+        private volatile long lastSeenSeqNo = -1;
+        private volatile long lastProcessedSeqNo = -1;
+        private final Queue<Translog.Operation> writeQueue = new LinkedList<>();
+        private final Set<Object> ongoingReads = new HashSet<>();
 
-        ChunksCoordinator(Client followerClient, Client leaderClient, Executor ccrExecutor, IndexMetadataVersionChecker imdVersionChecker,
-                          long batchSize, int concurrentProcessors, long processorMaxTranslogBytes, ShardId leaderShard,
-                          ShardId followerShard, Consumer<Exception> handler) {
-            this.followerClient = followerClient;
+        ShardFollowTracker(Client leaderClient, Client followerClient, BiFunction<TimeValue, Runnable, ScheduledFuture<?>> scheduler,
+                           BiConsumer<Long, Consumer<Exception>> versionChecker, ShardFollowTask params, ShardFollowNodeTask nodeTask) {
             this.leaderClient = leaderClient;
-            this.ccrExecutor = ccrExecutor;
-            this.imdVersionChecker = imdVersionChecker;
-            this.batchSize = batchSize;
-            this.concurrentProcessors = concurrentProcessors;
-            this.processorMaxTranslogBytes = processorMaxTranslogBytes;
-            this.leaderShard = leaderShard;
-            this.followerShard = followerShard;
-            this.handler = handler;
-            this.countDown = new CountDown(concurrentProcessors);
+            this.followerClient = followerClient;
+            this.scheduler = scheduler;
+            this.versionChecker = versionChecker;
+            this.params = params;
+            this.nodeTask = nodeTask;
         }
 
-        /**
-         * Creates chunks of the specified range, inclusive.
-         *
-         * @param from the lower end of the range (inclusive)
-         * @param to   the upper end of the range (inclusive)
-         */
-        void createChucks(final long from, final long to) {
-            LOGGER.debug("{} Creating chunks for operation range [{}] to [{}]", leaderShard, from, to);
-            for (long i = from; i < to; i += batchSize) {
-                long v2 = i + batchSize <= to ? i + batchSize - 1 : to;
-                chunks.add(new long[]{i, v2});
+        synchronized void start(long followGlobalCheckPoint) {
+            lastSeenSeqNo = followGlobalCheckPoint;
+            Object token = new Object();
+            ongoingReads.add(token);
+            coordinate(token, lastSeenSeqNo + 1);
+            scheduler.apply(TimeValue.timeValueMillis(3000), this::schedule);
+        }
+
+        synchronized void schedule() {
+            if (ongoingReads.isEmpty() && nodeTask.isRunning()) {
+                LOGGER.info("Re-starting");
+                start(lastSeenSeqNo);
             }
         }
 
-        void start() {
-            LOGGER.debug("{} Start coordination of [{}] chunks with [{}] concurrent processors",
-                    leaderShard, chunks.size(), concurrentProcessors);
-            for (int i = 0; i < concurrentProcessors; i++) {
-                ccrExecutor.execute(new AbstractRunnable() {
-                    @Override
-                    public void onFailure(Exception e) {
-                        assert e != null;
-                        LOGGER.error(() -> new ParameterizedMessage("{} Failure starting processor", leaderShard), e);
-                        postProcessChuck(e);
-                    }
-
-                    @Override
-                    protected void doRun() throws Exception {
-                        processNextChunk();
-                    }
-                });
-            }
-        }
-
-        void processNextChunk() {
-            long[] chunk = chunks.poll();
-            if (chunk == null) {
-                postProcessChuck(null);
+        synchronized void coordinate(Object token, long leaderGlobalCheckpoint) {
+            assert token != null;
+            if (nodeTask.isRunning() == false || lastSeenSeqNo >= leaderGlobalCheckpoint) {
+                if (ongoingReads.size() == 1) {
+                    flushWriteQueue(token);
+                }
+                ongoingReads.remove(token);
                 return;
             }
-            LOGGER.debug("{} Processing chunk [{}/{}]", leaderShard, chunk[0], chunk[1]);
-            Consumer<Exception> processorHandler = e -> {
-                if (e == null) {
-                    LOGGER.debug("{} Successfully processed chunk [{}/{}]", leaderShard, chunk[0], chunk[1]);
-                    processNextChunk();
-                } else {
-                    LOGGER.error(() -> new ParameterizedMessage("{} Failure processing chunk [{}/{}]",
-                            leaderShard, chunk[0], chunk[1]), e);
-                    postProcessChuck(e);
+
+            LOGGER.info("{}[{}] coordinate [{}][{}]", params.getFollowShardId(), token, lastProcessedSeqNo, leaderGlobalCheckpoint);
+            long from = lastSeenSeqNo + 1;
+            long size = params.getMaxReadSize();
+            getWriteOperations(token, from, size, response -> handleShardChangesResponse(token, response));
+
+            from += params.getMaxReadSize();
+            while (from <= leaderGlobalCheckpoint && ongoingReads.size() <= params.getNumConcurrentReads()) {
+                Object newToken = new Object();
+                ongoingReads.add(newToken);
+                getWriteOperations(token, from, size, response -> handleShardChangesResponse(newToken, response));
+                from += params.getMaxReadSize();
+            }
+        }
+
+        synchronized void handleShardChangesResponse(Object token, ShardChangesAction.Response response) {
+            versionChecker.accept(response.getIndexMetadataVersion(), e -> {
+                synchronized (this) {
+                    if (e != null) {
+                        handleFailure(token, e, () -> handleShardChangesResponse(token, response));
+                    } else {
+                        if (response.getOperations().length != 0) {
+                            LOGGER.info("{}[{}] Received [{}/{}]", params.getFollowShardId(), token, response.getOperations()[0].seqNo(),
+                                response.getHighestSeqNo());
+                            writeQueue.addAll(Arrays.asList(response.getOperations()));
+                            lastSeenSeqNo = Math.max(lastSeenSeqNo, response.getHighestSeqNo());
+                            maybeFlushWriteQueue(token);
+                            coordinate(token, response.getLeaderGlobalCheckpoint());
+                        } else {
+                            maybeFlushWriteQueue(token);
+                            coordinate(token, response.getLeaderGlobalCheckpoint());
+                        }
+                    }
                 }
-            };
-            ChunkProcessor processor = new ChunkProcessor(leaderClient, followerClient, chunks, ccrExecutor, imdVersionChecker,
-                    leaderShard, followerShard, processorHandler);
-            processor.start(chunk[0], chunk[1], processorMaxTranslogBytes);
+            });
         }
 
-        void postProcessChuck(Exception e) {
-            if (failureHolder.compareAndSet(null, e) == false) {
-                Exception firstFailure = failureHolder.get();
-                firstFailure.addSuppressed(e);
+        synchronized void maybeFlushWriteQueue(Object token) {
+            boolean shouldFlush = writeQueue.size() > 1000;
+            if (shouldFlush == false) {
+                shouldFlush = writeQueue.stream().mapToLong(Translog.Operation::estimateSize).sum() > ByteSizeUnit.MB.toBytes(1);
             }
-            if (countDown.countDown()) {
-                handler.accept(failureHolder.get());
+            if (shouldFlush) {
+                flushWriteQueue(token);
             }
         }
 
-        Queue<long[]> getChunks() {
-            return chunks;
+        private void flushWriteQueue(Object token) {
+            LOGGER.info("{}[{}]  Flushing [{}] write operations", params.getFollowShardId(), token, writeQueue.size());
+            Translog.Operation[] ops = writeQueue.toArray(new Translog.Operation[0]);
+            writeQueue.clear();
+            persistWriteOperations(token, ops, bulkShardOperationsResponse -> {
+                nodeTask.updateProcessedGlobalCheckpoint(lastSeenSeqNo);
+                maybeFlushWriteQueue(token);
+            });
         }
 
-    }
-
-    static class ChunkProcessor {
-
-        private final Client leaderClient;
-        private final Client followerClient;
-        private final Queue<long[]> chunks;
-        private final Executor ccrExecutor;
-        private final BiConsumer<Long, Consumer<Exception>> indexVersionChecker;
-
-        private final ShardId leaderShard;
-        private final ShardId followerShard;
-        private final Consumer<Exception> handler;
-        final AtomicInteger retryCounter = new AtomicInteger(0);
-
-        ChunkProcessor(Client leaderClient, Client followerClient, Queue<long[]> chunks, Executor ccrExecutor,
-                       BiConsumer<Long, Consumer<Exception>> indexVersionChecker,
-                       ShardId leaderShard, ShardId followerShard, Consumer<Exception> handler) {
-            this.leaderClient = leaderClient;
-            this.followerClient = followerClient;
-            this.chunks = chunks;
-            this.ccrExecutor = ccrExecutor;
-            this.indexVersionChecker = indexVersionChecker;
-            this.leaderShard = leaderShard;
-            this.followerShard = followerShard;
-            this.handler = handler;
-        }
-
-        void start(final long from, final long to, final long maxTranslogsBytes) {
-            ShardChangesAction.Request request = new ShardChangesAction.Request(leaderShard);
-            // Treat -1 as 0, because shard changes api min_seq_no is inclusive and therefore it doesn't allow a negative min_seq_no
-            // (If no indexing has happened in leader shard then global checkpoint is -1.)
-            request.setMinSeqNo(Math.max(0, from));
-            request.setMaxSeqNo(to);
-            request.setMaxTranslogsBytes(maxTranslogsBytes);
+        private void getWriteOperations(Object token, long fromSeqNo, long size, Consumer<ShardChangesAction.Response> responseHandler) {
+            ShardChangesAction.Request request = new ShardChangesAction.Request(params.getLeaderShardId());
+            request.setFromSeqNo(fromSeqNo);
+            request.setSize(size);
+            LOGGER.info("{}[{}] getWriteOperations [{}][{}]", params.getFollowShardId(), token, fromSeqNo, size);
             leaderClient.execute(ShardChangesAction.INSTANCE, request, new ActionListener<ShardChangesAction.Response>() {
                 @Override
                 public void onResponse(ShardChangesAction.Response response) {
-                    handleResponse(to, response);
+                   responseHandler.accept(response);
                 }
 
                 @Override
                 public void onFailure(Exception e) {
-                    assert e != null;
-                    if (shouldRetry(e)) {
-                        if (retryCounter.incrementAndGet() <= PROCESSOR_RETRY_LIMIT) {
-                            start(from, to, maxTranslogsBytes);
-                        } else {
-                            handler.accept(new ElasticsearchException("retrying failed [" + retryCounter.get() +
-                                    "] times, aborting...", e));
-                        }
-                    } else {
-                        handler.accept(e);
+                    handleFailure(token, e, () -> getWriteOperations(token, fromSeqNo, size, responseHandler));
+                }
+            });
+        }
+
+        private void persistWriteOperations(Object token, Translog.Operation[] operations,
+                                            Consumer<BulkShardOperationsResponse> responseHandler) {
+            final BulkShardOperationsRequest request = new BulkShardOperationsRequest(params.getFollowShardId(), operations);
+            followerClient.execute(BulkShardOperationsAction.INSTANCE, request,
+                new ActionListener<BulkShardOperationsResponse>() {
+                    @Override
+                    public void onResponse(BulkShardOperationsResponse response) {
+                        responseHandler.accept(response);
+                    }
+
+                    @Override
+                    public void onFailure(Exception e) {
+                        handleFailure(token, e, () -> persistWriteOperations(token, operations, responseHandler));
                     }
                 }
-            });
+            );
         }
 
-        void handleResponse(final long to, final ShardChangesAction.Response response) {
-            if (response.getOperations().length != 0) {
-                Translog.Operation lastOp = response.getOperations()[response.getOperations().length - 1];
-                boolean maxByteLimitReached = lastOp.seqNo() < to;
-                if (maxByteLimitReached) {
-                    // add a new entry to the queue for the operations that couldn't be fetched in the current shard changes api call:
-                    chunks.add(new long[]{lastOp.seqNo() + 1, to});
+        private final AtomicInteger retryCounter = new AtomicInteger(0);
+
+        private void handleFailure(Object token, Exception e, Runnable task) {
+            assert e != null;
+            if (shouldRetry(e)) {
+                if (nodeTask.isRunning() && retryCounter.incrementAndGet() <= PROCESSOR_RETRY_LIMIT) {
+                    scheduler.apply(RETRY_TIMEOUT, task);
+                } else {
+                    ongoingReads.remove(token);
+                    nodeTask.markAsFailed(new ElasticsearchException("retrying failed [" + retryCounter.get() +
+                        "] times, aborting...", e));
                 }
+            } else {
+                ongoingReads.remove(token);
+                nodeTask.markAsFailed(e);
             }
-            ccrExecutor.execute(new AbstractRunnable() {
-                @Override
-                public void onFailure(Exception e) {
-                    assert e != null;
-                    handler.accept(e);
-                }
-
-                @Override
-                protected void doRun() throws Exception {
-                    indexVersionChecker.accept(response.getIndexMetadataVersion(), e -> {
-                        if (e != null) {
-                            if (shouldRetry(e) && retryCounter.incrementAndGet() <= PROCESSOR_RETRY_LIMIT) {
-                                handleResponse(to, response);
-                            } else {
-                                handler.accept(new ElasticsearchException("retrying failed [" + retryCounter.get() +
-                                        "] times, aborting...", e));
-                            }
-                            return;
-                        }
-                        final BulkShardOperationsRequest request = new BulkShardOperationsRequest(followerShard, response.getOperations());
-                        followerClient.execute(BulkShardOperationsAction.INSTANCE, request,
-                            new ActionListener<BulkShardOperationsResponse>() {
-                            @Override
-                            public void onResponse(final BulkShardOperationsResponse bulkShardOperationsResponse) {
-                                handler.accept(null);
-                            }
-
-                                @Override
-                                public void onFailure(final Exception e) {
-                                    // No retry mechanism here, because if a failure is being redirected to this place it is considered
-                                    // non recoverable.
-                                    assert e != null;
-                                    handler.accept(e);
-                                }
-                            }
-                        );
-                    });
-                }
-            });
         }
 
-        boolean shouldRetry(Exception e) {
+        private boolean shouldRetry(Exception e) {
             // TODO: What other exceptions should be retried?
             return NetworkExceptionHelper.isConnectException(e) ||
-                    NetworkExceptionHelper.isCloseConnectionException(e);
+                NetworkExceptionHelper.isCloseConnectionException(e) ||
+                e instanceof ActionTransportException ||
+                e instanceof NodeClosedException ||
+                e instanceof UnavailableShardsException ||
+                e instanceof NoShardAvailableActionException;
         }
 
     }
@@ -459,7 +364,6 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
         private final Index leaderIndex;
         private final Index followIndex;
         private final AtomicLong currentIndexMetadataVersion;
-        private final Semaphore updateMappingSemaphore = new Semaphore(1);
 
         IndexMetadataVersionChecker(Index leaderIndex, Index followIndex, Client followClient, Client leaderClient) {
             this.followClient = followClient;
@@ -480,14 +384,7 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
         }
 
         void updateMapping(long minimumRequiredIndexMetadataVersion, Consumer<Exception> handler) {
-            try {
-                updateMappingSemaphore.acquire();
-            } catch (InterruptedException e) {
-                handler.accept(e);
-                return;
-            }
             if (currentIndexMetadataVersion.get() >= minimumRequiredIndexMetadataVersion) {
-                updateMappingSemaphore.release();
                 LOGGER.debug("Current index metadata version [{}] is higher or equal than minimum required index metadata version [{}]",
                     currentIndexMetadataVersion.get(), minimumRequiredIndexMetadataVersion);
                 handler.accept(null);
@@ -509,16 +406,9 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
                 putMappingRequest.source(mappingMetaData.source().string(), XContentType.JSON);
                 followClient.admin().indices().putMapping(putMappingRequest, ActionListener.wrap(putMappingResponse -> {
                     currentIndexMetadataVersion.set(indexMetaData.getVersion());
-                    updateMappingSemaphore.release();
                     handler.accept(null);
-                }, e -> {
-                    updateMappingSemaphore.release();
-                    handler.accept(e);
-                }));
-            }, e -> {
-                updateMappingSemaphore.release();
-                handler.accept(e);
-            }));
+                }, handler));
+            }, handler));
         }
     }
 

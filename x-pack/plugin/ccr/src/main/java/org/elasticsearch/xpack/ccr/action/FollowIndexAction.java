@@ -71,8 +71,8 @@ public class FollowIndexAction extends Action<FollowIndexAction.Response> {
 
         private String leaderIndex;
         private String followIndex;
-        private long batchSize = ShardFollowTasksExecutor.DEFAULT_BATCH_SIZE;
-        private int concurrentProcessors = ShardFollowTasksExecutor.DEFAULT_CONCURRENT_PROCESSORS;
+        private long maxReadSize = ShardFollowTasksExecutor.DEFAULT_MAX_READ_SIZE;
+        private int maxConcurrentReads = ShardFollowTasksExecutor.DEFAULT_MAX_CONCURRENT_READS;
         private long processorMaxTranslogBytes = ShardFollowTasksExecutor.DEFAULT_MAX_TRANSLOG_BYTES;
 
         public String getLeaderIndex() {
@@ -91,23 +91,23 @@ public class FollowIndexAction extends Action<FollowIndexAction.Response> {
             this.followIndex = followIndex;
         }
 
-        public long getBatchSize() {
-            return batchSize;
+        public long getMaxReadSize() {
+            return maxReadSize;
         }
 
-        public void setBatchSize(long batchSize) {
-            if (batchSize < 1) {
-                throw new IllegalArgumentException("Illegal batch_size [" + batchSize + "]");
+        public void setMaxReadSize(long maxReadSize) {
+            if (maxReadSize < 1) {
+                throw new IllegalArgumentException("Illegal max_concurrent_reads [" + maxReadSize + "]");
             }
 
-            this.batchSize = batchSize;
+            this.maxReadSize = maxReadSize;
         }
 
-        public void setConcurrentProcessors(int concurrentProcessors) {
-            if (concurrentProcessors < 1) {
+        public void setMaxConcurrentReads(int maxConcurrentReads) {
+            if (maxConcurrentReads < 1) {
                 throw new IllegalArgumentException("concurrent_processors must be larger than 0");
             }
-            this.concurrentProcessors = concurrentProcessors;
+            this.maxConcurrentReads = maxConcurrentReads;
         }
 
         public void setProcessorMaxTranslogBytes(long processorMaxTranslogBytes) {
@@ -127,8 +127,8 @@ public class FollowIndexAction extends Action<FollowIndexAction.Response> {
             super.readFrom(in);
             leaderIndex = in.readString();
             followIndex = in.readString();
-            batchSize = in.readVLong();
-            concurrentProcessors = in.readVInt();
+            maxReadSize = in.readVLong();
+            maxConcurrentReads = in.readVInt();
             processorMaxTranslogBytes = in.readVLong();
         }
 
@@ -137,8 +137,8 @@ public class FollowIndexAction extends Action<FollowIndexAction.Response> {
             super.writeTo(out);
             out.writeString(leaderIndex);
             out.writeString(followIndex);
-            out.writeVLong(batchSize);
-            out.writeVInt(concurrentProcessors);
+            out.writeVLong(maxReadSize);
+            out.writeVInt(maxConcurrentReads);
             out.writeVLong(processorMaxTranslogBytes);
         }
 
@@ -147,8 +147,8 @@ public class FollowIndexAction extends Action<FollowIndexAction.Response> {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             Request request = (Request) o;
-            return batchSize == request.batchSize &&
-                concurrentProcessors == request.concurrentProcessors &&
+            return maxReadSize == request.maxReadSize &&
+                maxConcurrentReads == request.maxConcurrentReads &&
                 processorMaxTranslogBytes == request.processorMaxTranslogBytes &&
                 Objects.equals(leaderIndex, request.leaderIndex) &&
                 Objects.equals(followIndex, request.followIndex);
@@ -156,7 +156,7 @@ public class FollowIndexAction extends Action<FollowIndexAction.Response> {
 
         @Override
         public int hashCode() {
-            return Objects.hash(leaderIndex, followIndex, batchSize, concurrentProcessors, processorMaxTranslogBytes);
+            return Objects.hash(leaderIndex, followIndex, maxReadSize, maxConcurrentReads, processorMaxTranslogBytes);
         }
     }
 
@@ -252,7 +252,7 @@ public class FollowIndexAction extends Action<FollowIndexAction.Response> {
                 ShardFollowTask shardFollowTask = new ShardFollowTask(clusterNameAlias,
                         new ShardId(followIndexMetadata.getIndex(), shardId),
                         new ShardId(leaderIndexMetadata.getIndex(), shardId),
-                        request.batchSize, request.concurrentProcessors, request.processorMaxTranslogBytes, filteredHeaders);
+                        request.maxReadSize, request.maxConcurrentReads, request.processorMaxTranslogBytes, filteredHeaders);
                 persistentTasksService.sendStartRequest(taskId, ShardFollowTask.NAME, shardFollowTask,
                         new ActionListener<PersistentTasksCustomMetaData.PersistentTask<ShardFollowTask>>() {
                             @Override

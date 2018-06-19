@@ -16,8 +16,9 @@ public class ShardChangesRequestTests extends AbstractStreamableTestCase<ShardCh
     @Override
     protected ShardChangesAction.Request createTestInstance() {
         ShardChangesAction.Request request = new ShardChangesAction.Request(new ShardId("_index", "_indexUUID", 0));
-        request.setMaxSeqNo(randomNonNegativeLong());
-        request.setMinSeqNo(randomNonNegativeLong());
+        request.setFromSeqNo(randomNonNegativeLong());
+        request.setSize(randomNonNegativeLong());
+        request.setMaxTranslogsBytes(randomNonNegativeLong());
         return request;
     }
 
@@ -28,13 +29,18 @@ public class ShardChangesRequestTests extends AbstractStreamableTestCase<ShardCh
 
     public void testValidate() {
         ShardChangesAction.Request request = new ShardChangesAction.Request(new ShardId("_index", "_indexUUID", 0));
-        request.setMinSeqNo(-1);
-        assertThat(request.validate().getMessage(), containsString("minSeqNo [-1] cannot be lower than 0"));
+        request.setFromSeqNo(-1);
+        assertThat(request.validate().getMessage(), containsString("fromSeqNo [-1] cannot be lower than 0"));
 
-        request.setMinSeqNo(4);
-        assertThat(request.validate().getMessage(), containsString("minSeqNo [4] cannot be larger than maxSeqNo [0]"));
+        request.setFromSeqNo(8);
+        request.setSize(-1);
+        assertThat(request.validate().getMessage(), containsString("size [-1] cannot be lower than 0"));
 
-        request.setMaxSeqNo(8);
+        request.setSize(10);
+        request.setMaxTranslogsBytes(-1);
+        assertThat(request.validate().getMessage(), containsString("maxTranslogsBytes [-1] cannot be lower than 0"));
+
+        request.setMaxTranslogsBytes(100000);
         assertThat(request.validate(), nullValue());
     }
 }

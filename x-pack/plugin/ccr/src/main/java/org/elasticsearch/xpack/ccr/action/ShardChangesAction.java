@@ -75,8 +75,16 @@ public class ShardChangesAction extends Action<ShardChangesAction.Response> {
             this.size = size;
         }
 
+        public long getSize() {
+            return size;
+        }
+
         public void setFromSeqNo(long fromSeqNo) {
             this.fromSeqNo = fromSeqNo;
+        }
+
+        public long getFromSeqNo() {
+            return fromSeqNo;
         }
 
         public void setMaxTranslogsBytes(long maxTranslogsBytes) {

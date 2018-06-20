@@ -170,10 +170,6 @@ public class ShardChangesAction extends Action<ShardChangesAction.Response> {
             return operations;
         }
 
-        public long getHighestSeqNo() {
-            return operations[operations.length - 1].seqNo();
-        }
-
         @Override
         public void readFrom(final StreamInput in) throws IOException {
             super.readFrom(in);

@@ -56,6 +56,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
@@ -157,7 +158,7 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
         return new FollowShardTracker(leaderClient, followerClient, scheduler, imdVersionChecker, params, shardFollowNodeTask);
     }
 
-    static class FollowShardTracker {
+    final static class FollowShardTracker {
 
         private static final Logger LOGGER = Loggers.getLogger(FollowShardTracker.class);
 
@@ -211,7 +212,21 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
             }
         }
 
-        synchronized void coordinate(Reader reader) {
+        private void updateWriteQueue(Reader reader, Translog.Operation[] ops) {
+            assert Thread.holdsLock(this);
+            if (ops.length != 0) {
+                LOGGER.debug("{}[{}] received [{}] new ops", params.getFollowShardId(), reader.id, ops.length);
+                writeQueue.addAll(Arrays.asList(ops));
+                lastReadSeqNo = Math.max(lastReadSeqNo, ops[ops.length - 1].seqNo());
+            } else {
+                LOGGER.debug("{}[{}] received no new ops", params.getFollowShardId(), reader.id);
+            }
+            maybeStartWriting(false);
+        }
+
+        private void coordinate(Reader reader, long leaderGlobalCheckpoint) {
+            assert Thread.holdsLock(this);
+            this.leaderGlobalCheckpoint = Math.max(this.leaderGlobalCheckpoint, leaderGlobalCheckpoint);
             if (nodeTask.isRunning() == false) {
                 LOGGER.info("{}[{}] stopping reader, because shard follow task has been stopped", params.getFollowShardId(), reader.id);
                 deleteReader(reader);
@@ -223,15 +238,15 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
                 from = Math.max(from, otherReaders.fromSeqNo);
             }
 
-            if (from > leaderGlobalCheckpoint) {
-                LOGGER.info("{}[{}] stopping reader, nothing to fetch [{}/{}]",
+            if (from >= leaderGlobalCheckpoint) {
+                LOGGER.info("{}[{}] stopping reader, nothing more to fetch [{}/{}]",
                     params.getFollowShardId(), reader.id, from, leaderGlobalCheckpoint);
                 deleteReader(reader);
                 return;
             }
 
             from += 1;
-            LOGGER.debug("{}[{}] continue to read [{}][{}]", params.getFollowShardId(), reader.id, lastReadSeqNo, leaderGlobalCheckpoint);
+            LOGGER.debug("{}[{}] existing reader [{}][{}]", params.getFollowShardId(), reader.id, lastReadSeqNo, leaderGlobalCheckpoint);
             reader.read(from);
 
             from += params.getMaxReadSize();
@@ -244,30 +259,18 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
             }
         }
 
-        synchronized void handleShardChangesResponse(Reader reader, ShardChangesAction.Response response) {
-            versionChecker.accept(response.getIndexMetadataVersion(), e -> {
-                synchronized (this) {
-                    if (e != null) {
-                        handleFailure(e, () -> handleShardChangesResponse(reader, response));
-                    } else {
-                        if (response.getOperations().length != 0) {
-                            LOGGER.debug("{}[{}] received [{}] new ops, leader global checkpoint [{}]", params.getFollowShardId(),
-                                reader.id, response.getOperations().length, response.getLeaderGlobalCheckpoint());
-                            writeQueue.addAll(Arrays.asList(response.getOperations()));
-                            lastReadSeqNo = Math.max(lastReadSeqNo, response.getHighestSeqNo());
-                        } else {
-                            LOGGER.debug("{}[{}] received no new ops, leader global checkpoint [{}]",
-                                params.getFollowShardId(), reader.id, response.getLeaderGlobalCheckpoint());
-                        }
-                        leaderGlobalCheckpoint = Math.max(leaderGlobalCheckpoint, response.getLeaderGlobalCheckpoint());
-                        maybeStartWriting(false);
-                        coordinate(reader);
-                    }
-                }
-            });
+        private void maybeFlushWriteQueue(Writer writer) {
+            assert Thread.holdsLock(this);
+            if (shouldFlush()) {
+                LOGGER.info("{}[{}] Flush threshold met", params.getFollowShardId(), writer.id);
+                flushWriteQueue(writer);
+            } else {
+                deleteWriter(writer);
+            }
         }
 
-        synchronized void maybeStartWriting(boolean force) {
+        private void maybeStartWriting(boolean force) {
+            assert Thread.holdsLock(this);
             if (force && writers.isEmpty() && writeQueue.isEmpty() == false) {
                 Writer writer = newWriter();
                 LOGGER.info("{}[{}] Force flush, new writer", params.getFollowShardId(), writer.id);
@@ -276,15 +279,6 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
                 Writer writer = newWriter();
                 LOGGER.info("{}[{}] Flush threshold met, new writer", params.getFollowShardId(), writer.id);
                 flushWriteQueue(writer);
-            }
-        }
-
-        synchronized void maybeFlushWriteQueue(Writer writer) {
-            if (shouldFlush()) {
-                LOGGER.info("{}[{}] Flush threshold met", params.getFollowShardId(), writer.id);
-                flushWriteQueue(writer);
-            } else {
-                deleteWriter(writer);
             }
         }
 
@@ -308,20 +302,24 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
                     lastWrittenSeqNo = highestSeqNo;
                     nodeTask.updateProcessedGlobalCheckpoint(lastWrittenSeqNo);
                 }
-                maybeFlushWriteQueue(writer);
+                synchronized (this) {
+                    maybeFlushWriteQueue(writer);
+                }
             });
         }
 
-        class Reader {
+        final class Reader {
 
             final int id;
+            final AtomicInteger retryCounter = new AtomicInteger(0);
+
             long fromSeqNo;
 
             Reader(int id) {
                 this.id = id;
             }
 
-            private void read(long fromSeqNo) {
+            void read(long fromSeqNo) {
                 assert Thread.holdsLock(FollowShardTracker.this);
                 this.fromSeqNo = fromSeqNo;
                 ShardChangesAction.Request request = new ShardChangesAction.Request(params.getLeaderShardId());
@@ -331,12 +329,27 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
                 leaderClient.execute(ShardChangesAction.INSTANCE, request, new ActionListener<ShardChangesAction.Response>() {
                     @Override
                     public void onResponse(ShardChangesAction.Response response) {
-                        handleShardChangesResponse(Reader.this, response);
+                        handleShardChangesResponse(response);
                     }
 
                     @Override
                     public void onFailure(Exception e) {
-                        handleFailure(e, () -> read(fromSeqNo));
+                        handleFailure(retryCounter, e, () -> read(fromSeqNo));
+                    }
+                });
+            }
+
+            void handleShardChangesResponse(ShardChangesAction.Response response) {
+                versionChecker.accept(response.getIndexMetadataVersion(), e -> {
+                    if (e == null) {
+                        // Reset retry counter, because we should only fail if errors happen continuously:
+                        retryCounter.set(0);
+                        synchronized (FollowShardTracker.this) {
+                            FollowShardTracker.this.updateWriteQueue(this, response.getOperations());
+                            FollowShardTracker.this.coordinate(this, response.getLeaderGlobalCheckpoint());
+                        }
+                    } else {
+                        handleFailure(retryCounter, e, () -> handleShardChangesResponse(response));
                     }
                 });
             }
@@ -364,9 +377,10 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
             }
         }
 
-        class Writer {
+        final class Writer {
 
             final int id;
+            final AtomicInteger retryCounter = new AtomicInteger(0);
 
             Writer(int id) {
                 this.id = id;
@@ -379,12 +393,13 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
                     new ActionListener<BulkShardOperationsResponse>() {
                         @Override
                         public void onResponse(BulkShardOperationsResponse response) {
+                            retryCounter.set(0);
                             responseHandler.accept(response);
                         }
 
                         @Override
                         public void onFailure(Exception e) {
-                            handleFailure(e, () -> write(operations, responseHandler));
+                            handleFailure(retryCounter, e, () -> write(operations, responseHandler));
                         }
                     }
                 );
@@ -409,9 +424,7 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
             assert result >= 0;
         }
 
-        private final AtomicInteger retryCounter = new AtomicInteger(0);
-
-        private void handleFailure(Exception e, Runnable task) {
+        private void handleFailure(AtomicInteger retryCounter, Exception e, Runnable task) {
             assert e != null;
             if (shouldRetry(e)) {
                 if (nodeTask.isRunning() && retryCounter.incrementAndGet() <= PROCESSOR_RETRY_LIMIT) {
@@ -480,6 +493,7 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
         private final Index leaderIndex;
         private final Index followIndex;
         private final AtomicLong currentIndexMetadataVersion;
+        private final Semaphore updateMappingSemaphore = new Semaphore(1);
 
         IndexMetadataVersionChecker(Index leaderIndex, Index followIndex, Client followClient, Client leaderClient) {
             this.followClient = followClient;
@@ -491,17 +505,29 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
 
         public void accept(Long minimumRequiredIndexMetadataVersion, Consumer<Exception> handler) {
             if (currentIndexMetadataVersion.get() >= minimumRequiredIndexMetadataVersion) {
-                LOGGER.trace("current index metadata version [{}] >= minimum required index metadata version [{}]",
+                LOGGER.debug("Current index metadata version [{}] is higher or equal than minimum required index metadata version [{}]",
                     currentIndexMetadataVersion.get(), minimumRequiredIndexMetadataVersion);
                 handler.accept(null);
             } else {
-                LOGGER.debug("updating mapping, current index metadata version [{}] < required minimum index metadata version [{}]",
-                    currentIndexMetadataVersion.get(), minimumRequiredIndexMetadataVersion);
-                updateMapping(handler);
+                updateMapping(minimumRequiredIndexMetadataVersion, handler);
             }
         }
 
-        void updateMapping(Consumer<Exception> handler) {
+        void updateMapping(long minimumRequiredIndexMetadataVersion, Consumer<Exception> handler) {
+            try {
+                updateMappingSemaphore.acquire();
+            } catch (InterruptedException e) {
+                handler.accept(e);
+                return;
+            }
+            if (currentIndexMetadataVersion.get() >= minimumRequiredIndexMetadataVersion) {
+                updateMappingSemaphore.release();
+                LOGGER.debug("Current index metadata version [{}] is higher or equal than minimum required index metadata version [{}]",
+                    currentIndexMetadataVersion.get(), minimumRequiredIndexMetadataVersion);
+                handler.accept(null);
+                return;
+            }
+
             ClusterStateRequest clusterStateRequest = new ClusterStateRequest();
             clusterStateRequest.clear();
             clusterStateRequest.metaData(true);
@@ -517,9 +543,16 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
                 putMappingRequest.source(mappingMetaData.source().string(), XContentType.JSON);
                 followClient.admin().indices().putMapping(putMappingRequest, ActionListener.wrap(putMappingResponse -> {
                     currentIndexMetadataVersion.set(indexMetaData.getVersion());
+                    updateMappingSemaphore.release();
                     handler.accept(null);
-                }, handler));
-            }, handler));
+                }, e -> {
+                    updateMappingSemaphore.release();
+                    handler.accept(e);
+                }));
+            }, e -> {
+                updateMappingSemaphore.release();
+                handler.accept(e);
+            }));
         }
     }
 

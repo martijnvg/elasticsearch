@@ -41,7 +41,7 @@ public class ShardFollowTask implements XPackPlugin.XPackPersistentTaskParams {
     static final ParseField LEADER_SHARD_SHARDID_FIELD = new ParseField("leader_shard_shard");
     static final ParseField HEADERS = new ParseField("headers");
     public static final ParseField MAX_CHUNK_SIZE = new ParseField("max_read_size");
-    public static final ParseField NUM_CONCURRENT_CHUNKS = new ParseField("max_concurrent_reads");
+    public static final ParseField NUM_CONCURRENT_CHUNKS = new ParseField("max_concurrent_readers");
     public static final ParseField PROCESSOR_MAX_TRANSLOG_BYTES_PER_REQUEST = new ParseField("processor_max_translog_bytes");
 
     @SuppressWarnings("unchecked")
@@ -68,17 +68,17 @@ public class ShardFollowTask implements XPackPlugin.XPackPersistentTaskParams {
     private final ShardId followShardId;
     private final ShardId leaderShardId;
     private final long maxReadSize;
-    private final int numConcurrentReads;
+    private final int maxConcurrentReaders;
     private final long processorMaxTranslogBytes;
     private final Map<String, String> headers;
 
     ShardFollowTask(String leaderClusterAlias, ShardId followShardId, ShardId leaderShardId, long maxReadSize,
-                    int numConcurrentReads, long processorMaxTranslogBytes, Map<String, String> headers) {
+                    int maxConcurrentReaders, long processorMaxTranslogBytes, Map<String, String> headers) {
         this.leaderClusterAlias = leaderClusterAlias;
         this.followShardId = followShardId;
         this.leaderShardId = leaderShardId;
         this.maxReadSize = maxReadSize;
-        this.numConcurrentReads = numConcurrentReads;
+        this.maxConcurrentReaders = maxConcurrentReaders;
         this.processorMaxTranslogBytes = processorMaxTranslogBytes;
         this.headers = headers != null ? Collections.unmodifiableMap(headers) : Collections.emptyMap();
     }
@@ -88,7 +88,7 @@ public class ShardFollowTask implements XPackPlugin.XPackPersistentTaskParams {
         this.followShardId = ShardId.readShardId(in);
         this.leaderShardId = ShardId.readShardId(in);
         this.maxReadSize = in.readVLong();
-        this.numConcurrentReads = in.readVInt();
+        this.maxConcurrentReaders = in.readVInt();
         this.processorMaxTranslogBytes = in.readVLong();
         this.headers = Collections.unmodifiableMap(in.readMap(StreamInput::readString, StreamInput::readString));
     }
@@ -109,8 +109,8 @@ public class ShardFollowTask implements XPackPlugin.XPackPersistentTaskParams {
         return maxReadSize;
     }
 
-    public int getNumConcurrentReads() {
-        return numConcurrentReads;
+    public int getMaxConcurrentReaders() {
+        return maxConcurrentReaders;
     }
 
     public long getProcessorMaxTranslogBytes() {
@@ -132,7 +132,7 @@ public class ShardFollowTask implements XPackPlugin.XPackPersistentTaskParams {
         followShardId.writeTo(out);
         leaderShardId.writeTo(out);
         out.writeVLong(maxReadSize);
-        out.writeVInt(numConcurrentReads);
+        out.writeVInt(maxConcurrentReaders);
         out.writeVLong(processorMaxTranslogBytes);
         out.writeMap(headers, StreamOutput::writeString, StreamOutput::writeString);
     }
@@ -154,7 +154,7 @@ public class ShardFollowTask implements XPackPlugin.XPackPersistentTaskParams {
         builder.field(LEADER_SHARD_INDEX_UUID_FIELD.getPreferredName(), leaderShardId.getIndex().getUUID());
         builder.field(LEADER_SHARD_SHARDID_FIELD.getPreferredName(), leaderShardId.id());
         builder.field(MAX_CHUNK_SIZE.getPreferredName(), maxReadSize);
-        builder.field(NUM_CONCURRENT_CHUNKS.getPreferredName(), numConcurrentReads);
+        builder.field(NUM_CONCURRENT_CHUNKS.getPreferredName(), maxConcurrentReaders);
         builder.field(PROCESSOR_MAX_TRANSLOG_BYTES_PER_REQUEST.getPreferredName(), processorMaxTranslogBytes);
         builder.field(HEADERS.getPreferredName(), headers);
         return builder.endObject();
@@ -169,14 +169,14 @@ public class ShardFollowTask implements XPackPlugin.XPackPersistentTaskParams {
                 Objects.equals(followShardId, that.followShardId) &&
                 Objects.equals(leaderShardId, that.leaderShardId) &&
                 maxReadSize == that.maxReadSize &&
-                numConcurrentReads == that.numConcurrentReads &&
+                maxConcurrentReaders == that.maxConcurrentReaders &&
                 processorMaxTranslogBytes == that.processorMaxTranslogBytes &&
                 Objects.equals(headers, that.headers);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(leaderClusterAlias, followShardId, leaderShardId, maxReadSize, numConcurrentReads,
+        return Objects.hash(leaderClusterAlias, followShardId, leaderShardId, maxReadSize, maxConcurrentReaders,
                 processorMaxTranslogBytes, headers);
     }
 

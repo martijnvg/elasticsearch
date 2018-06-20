@@ -61,6 +61,7 @@ import static java.util.Collections.singletonMap;
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertAcked;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
@@ -260,7 +261,7 @@ public class ShardChangesIT extends ESIntegTestCase {
         unfollowIndex("index2");
     }
 
-    public void testFollowIndex_random() throws Exception {
+    public void testFollowIndex_backlog() throws Exception {
         String leaderIndexSettings = getIndexSettings(3, singletonMap(IndexSettings.INDEX_SOFT_DELETES_SETTING.getKey(), "true"));
         assertAcked(client().admin().indices().prepareCreate("index1").setSource(leaderIndexSettings, XContentType.JSON));
 
@@ -292,12 +293,12 @@ public class ShardChangesIT extends ESIntegTestCase {
                     .timeout(TimeValue.timeValueSeconds(1));
                 bulkProcessor.add(indexRequest);
             }
-            bulkProcessor.close();
         });
         thread.start();
 
+        // Waiting for some document being index before following the index:
         long maxReadSize = randomIntBetween(128, 2048);
-        long numDocsReplicated = maxReadSize * 10;//Math.min(3000 * 2, randomLongBetween(maxReadSize, maxReadSize * 10));
+        long numDocsReplicated = Math.min(3000 * 2, randomLongBetween(maxReadSize, maxReadSize * 10));
         atLeastDocsIndexed("index1", numDocsReplicated / 3);
 
         final FollowIndexAction.Request followRequest = new FollowIndexAction.Request();
@@ -310,6 +311,7 @@ public class ShardChangesIT extends ESIntegTestCase {
         atLeastDocsIndexed("index2", numDocsReplicated);
         run.set(false);
         thread.join();
+        assertThat(bulkProcessor.awaitClose(1L, TimeUnit.MINUTES), is(true));
 
         assertSameDocCount("index1", "index2");
         unfollowIndex("index2");

@@ -50,12 +50,11 @@ import org.elasticsearch.xpack.ccr.action.bulk.BulkShardOperationsRequest;
 import org.elasticsearch.xpack.ccr.action.bulk.BulkShardOperationsResponse;
 
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
-import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -170,9 +169,12 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
         private final ShardFollowTask params;
         private final ShardFollowNodeTask nodeTask;
 
-        private volatile long lastSeenSeqNo = -1;
-//        private volatile long lastProcessedSeqNo = -1;
-        private final Set<Object> ongoingReads = new HashSet<>();
+        private volatile long leaderGlobalCheckpoint = -1;
+        private volatile long lastReadSeqNo = -1;
+        private volatile long lastWrittenSeqNo = -1;
+
+        private final Map<Integer, Reader> readers = new HashMap<>();
+        private final Map<Integer, Writer> writers = new HashMap<>();
         private final Queue<Translog.Operation> writeQueue = new LinkedList<>();
 
         FollowShardTracker(Client leaderClient, Client followerClient, BiFunction<TimeValue, Runnable, ScheduledFuture<?>> scheduler,
@@ -186,153 +188,225 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
         }
 
         synchronized void start(long followGlobalCheckPoint) {
-            Object token = newToken();
-            LOGGER.info("{}[{}] starting", params.getFollowShardId(), token);
-            getWriteOperations(token, followGlobalCheckPoint, response -> handleShardChangesResponse(token, response));
+            Reader reader = newReader();
+            LOGGER.info("{}[{}] starting", params.getFollowShardId(), reader.id);
+            reader.read(followGlobalCheckPoint);
             scheduler.apply(TimeValue.timeValueMillis(500), this::schedule);
         }
 
         private void schedule() {
             if (nodeTask.isRunning()) {
-                if (tokenCounter.get() == 0) {
+                if (readerCounter.get() == 0) {
                     synchronized (this) {
-                        Object token = newToken();
-                        LOGGER.info("{}[{}] re-starting", params.getFollowShardId(), token);
-                        getWriteOperations(token, lastSeenSeqNo, response -> handleShardChangesResponse(token, response));
+                        Reader reader = newReader();
+                        LOGGER.info("{}[{}] re-starting", params.getFollowShardId(), reader.id);
+                        reader.read(lastReadSeqNo);
                     }
                 } else {
-                    LOGGER.info("{} not restarting", params.getFollowShardId());
+                    LOGGER.debug("{} not restarting", params.getFollowShardId());
                 }
                 scheduler.apply(TimeValue.timeValueMillis(500), this::schedule);
             } else {
-                LOGGER.info("{} shard follow task has been stopped", params.getFollowShardId());
+                LOGGER.debug("{} shard follow task has been stopped", params.getFollowShardId());
             }
         }
 
-        synchronized void coordinate(Object token, long leaderGlobalCheckpoint) {
-            assert token != null;
-            if (nodeTask.isRunning() == false || lastSeenSeqNo >= leaderGlobalCheckpoint) {
-                deleteToken(token);
+        synchronized void coordinate(Reader reader) {
+            if (nodeTask.isRunning() == false) {
+                LOGGER.info("{}[{}] stopping reader, because shard follow task has been stopped", params.getFollowShardId(), reader.id);
+                deleteReader(reader);
                 return;
             }
 
-            LOGGER.info("{}[{}] coordinate [{}][{}]", params.getFollowShardId(), token, lastSeenSeqNo, leaderGlobalCheckpoint);
-            long from = lastSeenSeqNo + 1;
-            getWriteOperations(token, from, response -> handleShardChangesResponse(token, response));
+            long from = -1;
+            for (Reader otherReaders : readers.values()) {
+                from = Math.max(from, otherReaders.fromSeqNo);
+            }
+
+            if (from > leaderGlobalCheckpoint) {
+                LOGGER.info("{}[{}] stopping reader, nothing to fetch [{}/{}]",
+                    params.getFollowShardId(), reader.id, from, leaderGlobalCheckpoint);
+                deleteReader(reader);
+                return;
+            }
+
+            from += 1;
+            LOGGER.debug("{}[{}] continue to read [{}][{}]", params.getFollowShardId(), reader.id, lastReadSeqNo, leaderGlobalCheckpoint);
+            reader.read(from);
 
             from += params.getMaxReadSize();
-            while (from <= leaderGlobalCheckpoint && ongoingReads.size() <= params.getNumConcurrentReads()) {
-                Object newToken = newToken();
-                LOGGER.info("{}[{}] coordinate [{}][{}]", params.getFollowShardId(), token, lastSeenSeqNo, leaderGlobalCheckpoint);
-                getWriteOperations(token, from, response -> handleShardChangesResponse(newToken, response));
+            while (from <= leaderGlobalCheckpoint &&
+                readers.size() <= params.getMaxConcurrentReaders()) {
+                Reader newReader = newReader();
+                LOGGER.info("{}[{}] new reader [{}][{}]", params.getFollowShardId(), newReader.id, lastReadSeqNo, leaderGlobalCheckpoint);
+                newReader.read(from);
                 from += params.getMaxReadSize();
             }
         }
 
-        synchronized void handleShardChangesResponse(Object token, ShardChangesAction.Response response) {
+        synchronized void handleShardChangesResponse(Reader reader, ShardChangesAction.Response response) {
             versionChecker.accept(response.getIndexMetadataVersion(), e -> {
                 synchronized (this) {
                     if (e != null) {
-                        handleFailure(e, () -> handleShardChangesResponse(token, response));
+                        handleFailure(e, () -> handleShardChangesResponse(reader, response));
                     } else {
                         if (response.getOperations().length != 0) {
-                            LOGGER.info("{}[{}] received [{}] new ops, leader global checkpoint [{}]",
-                                params.getFollowShardId(), token, response.getOperations().length, response.getLeaderGlobalCheckpoint());
+                            LOGGER.debug("{}[{}] received [{}] new ops, leader global checkpoint [{}]", params.getFollowShardId(),
+                                reader.id, response.getOperations().length, response.getLeaderGlobalCheckpoint());
                             writeQueue.addAll(Arrays.asList(response.getOperations()));
-                            lastSeenSeqNo = Math.max(lastSeenSeqNo, response.getHighestSeqNo());
-                            maybeFlushWriteQueue(token);
-                            coordinate(token, response.getLeaderGlobalCheckpoint());
+                            lastReadSeqNo = Math.max(lastReadSeqNo, response.getHighestSeqNo());
                         } else {
-                            LOGGER.info("{}[{}] received no new ops, leader global checkpoint [{}]",
-                                params.getFollowShardId(), token, response.getLeaderGlobalCheckpoint());
-                            maybeFlushWriteQueue(token);
-                            coordinate(token, response.getLeaderGlobalCheckpoint());
+                            LOGGER.debug("{}[{}] received no new ops, leader global checkpoint [{}]",
+                                params.getFollowShardId(), reader.id, response.getLeaderGlobalCheckpoint());
                         }
+                        leaderGlobalCheckpoint = Math.max(leaderGlobalCheckpoint, response.getLeaderGlobalCheckpoint());
+                        maybeStartWriting(false);
+                        coordinate(reader);
                     }
                 }
             });
         }
 
-        synchronized void maybeFlushWriteQueue(Object token) {
+        synchronized void maybeStartWriting(boolean force) {
+            if (force && writers.isEmpty() && writeQueue.isEmpty() == false) {
+                Writer writer = newWriter();
+                LOGGER.info("{}[{}] Force flush, new writer", params.getFollowShardId(), writer.id);
+                flushWriteQueue(writer);
+            } else if (writers.isEmpty() && shouldFlush()) {
+                Writer writer = newWriter();
+                LOGGER.info("{}[{}] Flush threshold met, new writer", params.getFollowShardId(), writer.id);
+                flushWriteQueue(writer);
+            }
+        }
+
+        synchronized void maybeFlushWriteQueue(Writer writer) {
+            if (shouldFlush()) {
+                LOGGER.info("{}[{}] Flush threshold met", params.getFollowShardId(), writer.id);
+                flushWriteQueue(writer);
+            } else {
+                deleteWriter(writer);
+            }
+        }
+
+        private boolean shouldFlush()  {
+            assert Thread.holdsLock(this);
             boolean shouldFlush = writeQueue.size() > 1000;
             if (shouldFlush == false) {
                 shouldFlush = writeQueue.stream().mapToLong(Translog.Operation::estimateSize).sum() > ByteSizeUnit.MB.toBytes(1);
             }
-            if (shouldFlush) {
-                LOGGER.info("{}[{}] Flush threshold met", params.getFollowShardId(), token);
-                flushWriteQueue(token);
-            }
+            return shouldFlush;
         }
 
-        private void flushWriteQueue(Object token) {
+        private void flushWriteQueue(Writer writer) {
             assert Thread.holdsLock(this);
-            LOGGER.info("{}[{}]  Flushing [{}] write operations", params.getFollowShardId(), token, writeQueue.size());
+            LOGGER.info("{}[{}]  Flushing [{}] write operations", params.getFollowShardId(), writer.id, writeQueue.size());
             Translog.Operation[] ops = writeQueue.toArray(new Translog.Operation[0]);
             writeQueue.clear();
-            persistWriteOperations(token, ops, bulkShardOperationsResponse -> {
-                nodeTask.updateProcessedGlobalCheckpoint(lastSeenSeqNo);
-                maybeFlushWriteQueue(token);
+            writer.write(ops, bulkShardOperationsResponse -> {
+                long highestSeqNo = Arrays.stream(ops).mapToLong(Translog.Operation::seqNo).max().getAsLong();
+                if (highestSeqNo > lastWrittenSeqNo) {
+                    lastWrittenSeqNo = highestSeqNo;
+                    nodeTask.updateProcessedGlobalCheckpoint(lastWrittenSeqNo);
+                }
+                maybeFlushWriteQueue(writer);
             });
         }
 
-        private void getWriteOperations(Object token, long fromSeqNo, Consumer<ShardChangesAction.Response> responseHandler) {
-            assert Thread.holdsLock(this);
-            ShardChangesAction.Request request = new ShardChangesAction.Request(params.getLeaderShardId());
-            request.setFromSeqNo(Math.max(0, fromSeqNo));
-            request.setSize(params.getMaxReadSize());
-            LOGGER.info("{}[{}] getWriteOperations [{}][{}]", params.getFollowShardId(), token, request.getFromSeqNo(), request.getSize());
-            leaderClient.execute(ShardChangesAction.INSTANCE, request, new ActionListener<ShardChangesAction.Response>() {
-                @Override
-                public void onResponse(ShardChangesAction.Response response) {
-                   responseHandler.accept(response);
-                }
+        class Reader {
 
-                @Override
-                public void onFailure(Exception e) {
-                    handleFailure(e, () -> getWriteOperations(token, fromSeqNo, responseHandler));
-                }
-            });
-        }
+            final int id;
+            long fromSeqNo;
 
-        private void persistWriteOperations(Object token, Translog.Operation[] operations,
-                                            Consumer<BulkShardOperationsResponse> responseHandler) {
-            assert Thread.holdsLock(this);
-            final BulkShardOperationsRequest request = new BulkShardOperationsRequest(params.getFollowShardId(), operations);
-            followerClient.execute(BulkShardOperationsAction.INSTANCE, request,
-                new ActionListener<BulkShardOperationsResponse>() {
+            Reader(int id) {
+                this.id = id;
+            }
+
+            private void read(long fromSeqNo) {
+                assert Thread.holdsLock(FollowShardTracker.this);
+                this.fromSeqNo = fromSeqNo;
+                ShardChangesAction.Request request = new ShardChangesAction.Request(params.getLeaderShardId());
+                request.setFromSeqNo(Math.max(0, fromSeqNo));
+                request.setSize(params.getMaxReadSize());
+                LOGGER.debug("{}[{}] read [{}][{}]", params.getFollowShardId(), id, request.getFromSeqNo(), request.getSize());
+                leaderClient.execute(ShardChangesAction.INSTANCE, request, new ActionListener<ShardChangesAction.Response>() {
                     @Override
-                    public void onResponse(BulkShardOperationsResponse response) {
-                        responseHandler.accept(response);
+                    public void onResponse(ShardChangesAction.Response response) {
+                        handleShardChangesResponse(Reader.this, response);
                     }
 
                     @Override
                     public void onFailure(Exception e) {
-                        handleFailure(e, () -> persistWriteOperations(token, operations, responseHandler));
+                        handleFailure(e, () -> read(fromSeqNo));
                     }
-                }
-            );
+                });
+            }
+
         }
 
-        private final AtomicInteger tokenCounter = new AtomicInteger(0);
+        private final AtomicInteger readerCounter = new AtomicInteger(0);
 
-        private Object newToken() {
+        private Reader newReader() {
             assert Thread.holdsLock(this);
-            Object token = tokenCounter.getAndIncrement();
-            boolean added = ongoingReads.add(token);
-            assert added;
-            return token;
+            Reader reader = new Reader(readerCounter.getAndIncrement());
+            Reader previous = readers.put(reader.id, reader);
+            assert previous == null;
+            return reader;
         }
 
-        private void deleteToken(Object token) {
+        private void deleteReader(Reader reader) {
             assert Thread.holdsLock(this);
-            boolean removed = ongoingReads.remove(token);
-            assert removed;
-            int result = tokenCounter.decrementAndGet();
+            Reader previous = readers.remove(reader.id);
+            assert previous == reader;
+            int result = readerCounter.decrementAndGet();
             assert result >= 0;
             if (result == 0 && writeQueue.isEmpty() == false) {
-                LOGGER.info("{}[{}] Force flush", params.getFollowShardId(), token);
-                flushWriteQueue(token);
+                maybeStartWriting(true);
             }
+        }
+
+        class Writer {
+
+            final int id;
+
+            Writer(int id) {
+                this.id = id;
+            }
+
+            private void write(Translog.Operation[] operations, Consumer<BulkShardOperationsResponse> responseHandler) {
+                assert Thread.holdsLock(FollowShardTracker.this);
+                final BulkShardOperationsRequest request = new BulkShardOperationsRequest(params.getFollowShardId(), operations);
+                followerClient.execute(BulkShardOperationsAction.INSTANCE, request,
+                    new ActionListener<BulkShardOperationsResponse>() {
+                        @Override
+                        public void onResponse(BulkShardOperationsResponse response) {
+                            responseHandler.accept(response);
+                        }
+
+                        @Override
+                        public void onFailure(Exception e) {
+                            handleFailure(e, () -> write(operations, responseHandler));
+                        }
+                    }
+                );
+            }
+        }
+
+        private final AtomicInteger writerCounter = new AtomicInteger(0);
+
+        private Writer newWriter() {
+            assert Thread.holdsLock(this);
+            Writer writer = new Writer(writerCounter.getAndIncrement());
+            Writer previous = writers.put(writer.id, writer);
+            assert previous == null;
+            return writer;
+        }
+
+        private void deleteWriter(Writer writer) {
+            assert Thread.holdsLock(this);
+            Writer previous = writers.remove(writer.id);
+            assert previous == writer;
+            int result = writerCounter.decrementAndGet();
+            assert result >= 0;
         }
 
         private final AtomicInteger retryCounter = new AtomicInteger(0);

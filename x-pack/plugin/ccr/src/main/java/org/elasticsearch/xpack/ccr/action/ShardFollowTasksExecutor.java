@@ -5,17 +5,11 @@
  */
 package org.elasticsearch.xpack.ccr.action;
 
-import org.apache.logging.log4j.Logger;
-import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.Action;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionRequestBuilder;
 import org.elasticsearch.action.ActionResponse;
-import org.elasticsearch.action.NoShardAvailableActionException;
-import org.elasticsearch.action.UnavailableShardsException;
-import org.elasticsearch.action.admin.cluster.state.ClusterStateRequest;
-import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest;
 import org.elasticsearch.action.admin.indices.stats.IndexStats;
 import org.elasticsearch.action.admin.indices.stats.IndicesStatsRequest;
 import org.elasticsearch.action.admin.indices.stats.ShardStats;
@@ -23,43 +17,23 @@ import org.elasticsearch.action.support.ContextPreservingActionListener;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.FilterClient;
 import org.elasticsearch.cluster.ClusterState;
-import org.elasticsearch.cluster.metadata.IndexMetaData;
-import org.elasticsearch.cluster.metadata.MappingMetaData;
 import org.elasticsearch.cluster.routing.IndexRoutingTable;
-import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.NetworkExceptionHelper;
-import org.elasticsearch.common.unit.ByteSizeUnit;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.concurrent.ThreadContext;
-import org.elasticsearch.common.xcontent.XContentType;
-import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.ShardId;
-import org.elasticsearch.index.translog.Translog;
-import org.elasticsearch.node.NodeClosedException;
 import org.elasticsearch.persistent.AllocatedPersistentTask;
 import org.elasticsearch.persistent.PersistentTaskState;
 import org.elasticsearch.persistent.PersistentTasksCustomMetaData;
 import org.elasticsearch.persistent.PersistentTasksExecutor;
 import org.elasticsearch.tasks.TaskId;
 import org.elasticsearch.threadpool.ThreadPool;
-import org.elasticsearch.transport.ActionTransportException;
 import org.elasticsearch.xpack.ccr.Ccr;
-import org.elasticsearch.xpack.ccr.action.bulk.BulkShardOperationsAction;
-import org.elasticsearch.xpack.ccr.action.bulk.BulkShardOperationsRequest;
-import org.elasticsearch.xpack.ccr.action.bulk.BulkShardOperationsResponse;
 
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Queue;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
@@ -69,10 +43,8 @@ import java.util.stream.Collectors;
 public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollowTask> {
 
     static final long DEFAULT_MAX_READ_SIZE = 1024;
-    static final int PROCESSOR_RETRY_LIMIT = 5;
     static final int DEFAULT_MAX_CONCURRENT_READS = 5;
     static final long DEFAULT_MAX_TRANSLOG_BYTES= Long.MAX_VALUE;
-    private static final TimeValue RETRY_TIMEOUT = TimeValue.timeValueMillis(500);
 
     private final Client client;
     private final ThreadPool threadPool;
@@ -111,10 +83,24 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
     protected void nodeOperation(final AllocatedPersistentTask task, final ShardFollowTask params, final PersistentTaskState state) {
         ShardFollowNodeTask shardFollowNodeTask = (ShardFollowNodeTask) task;
         logger.info("[{}] Starting to track leader shard [{}], params [{}]", params.getFollowShardId(), params.getLeaderShardId(), params);
-        FollowShardTracker tracker = createFollowShardTracker(client, threadPool, params, shardFollowNodeTask);
-        tracker.versionChecker.accept(1L /* Force update, version is initially 0L */, e -> {
+
+        final Client leaderClient;
+        if (params.getLeaderClusterAlias() != null) {
+            leaderClient = wrapClient(client.getRemoteClusterClient(params.getLeaderClusterAlias()), params);
+        } else {
+            leaderClient = wrapClient(client, params);
+        }
+        Client followerClient = wrapClient(client, params);
+        BiFunction<TimeValue, Runnable, ScheduledFuture<?>> scheduler =
+            (delay, command) -> threadPool.schedule(delay, Ccr.CCR_THREAD_POOL_NAME, command);
+        IMDVersionChecker imdVersionChecker = new IMDVersionChecker(params.getLeaderShardId().getIndex(),
+            params.getFollowShardId().getIndex(), client, leaderClient);
+        FollowShardTracker tracker =
+            new FollowShardTracker(leaderClient, followerClient, scheduler, imdVersionChecker, params, shardFollowNodeTask);
+
+        imdVersionChecker.updateMapping(1L /* Force update, version is initially 0L */, e -> {
             if (e == null) {
-                fetchGlobalCheckpoint(tracker.followerClient, params.getFollowShardId(), followGlobalCheckPoint -> {
+                fetchGlobalCheckpoint(followerClient, params.getFollowShardId(), followGlobalCheckPoint -> {
                     shardFollowNodeTask.updateProcessedGlobalCheckpoint(followGlobalCheckPoint);
                     tracker.start(followGlobalCheckPoint);
                     logger.info("[{}] Started to track leader shard [{}]", params.getFollowShardId(), params.getLeaderShardId());
@@ -142,319 +128,7 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
         }, errorHandler));
     }
 
-    private static FollowShardTracker createFollowShardTracker(Client client, ThreadPool threadPool,
-                                                               ShardFollowTask params, ShardFollowNodeTask shardFollowNodeTask) {
-
-        Client leaderClient = wrapClient(params.getLeaderClusterAlias() != null ?
-            client.getRemoteClusterClient(params.getLeaderClusterAlias()) : client, params);
-        Client followerClient = wrapClient(client, params);
-
-        IndexMetadataVersionChecker imdVersionChecker = new IndexMetadataVersionChecker(params.getLeaderShardId().getIndex(),
-            params.getFollowShardId().getIndex(), client, leaderClient);
-
-        BiFunction<TimeValue, Runnable, ScheduledFuture<?>> scheduler =
-            (delay, command) -> threadPool.schedule(delay, Ccr.CCR_THREAD_POOL_NAME, command);
-
-        return new FollowShardTracker(leaderClient, followerClient, scheduler, imdVersionChecker, params, shardFollowNodeTask);
-    }
-
-    final static class FollowShardTracker {
-
-        private static final Logger LOGGER = Loggers.getLogger(FollowShardTracker.class);
-
-        private final Client leaderClient;
-        private final Client followerClient;
-        private final BiFunction<TimeValue, Runnable, ScheduledFuture<?>> scheduler;
-        private final BiConsumer<Long, Consumer<Exception>> versionChecker;
-
-        private final ShardFollowTask params;
-        private final ShardFollowNodeTask nodeTask;
-
-        private volatile long leaderGlobalCheckpoint = -1;
-        private volatile long lastReadSeqNo = -1;
-        private volatile long lastWrittenSeqNo = -1;
-
-        private final Map<Integer, Reader> readers = new HashMap<>();
-        private final Map<Integer, Writer> writers = new HashMap<>();
-        private final Queue<Translog.Operation> writeQueue = new LinkedList<>();
-
-        FollowShardTracker(Client leaderClient, Client followerClient, BiFunction<TimeValue, Runnable, ScheduledFuture<?>> scheduler,
-                           BiConsumer<Long, Consumer<Exception>> versionChecker, ShardFollowTask params, ShardFollowNodeTask nodeTask) {
-            this.leaderClient = leaderClient;
-            this.followerClient = followerClient;
-            this.scheduler = scheduler;
-            this.versionChecker = versionChecker;
-            this.params = params;
-            this.nodeTask = nodeTask;
-        }
-
-        synchronized void start(long followGlobalCheckPoint) {
-            Reader reader = newReader();
-            LOGGER.info("{}[{}] starting", params.getFollowShardId(), reader.id);
-            reader.read(followGlobalCheckPoint);
-            scheduler.apply(TimeValue.timeValueMillis(500), this::schedule);
-        }
-
-        private void schedule() {
-            if (nodeTask.isRunning()) {
-                if (readerCounter.get() == 0) {
-                    synchronized (this) {
-                        Reader reader = newReader();
-                        LOGGER.info("{}[{}] re-starting", params.getFollowShardId(), reader.id);
-                        reader.read(lastReadSeqNo);
-                    }
-                } else {
-                    LOGGER.debug("{} not restarting", params.getFollowShardId());
-                }
-                scheduler.apply(TimeValue.timeValueMillis(500), this::schedule);
-            } else {
-                LOGGER.debug("{} shard follow task has been stopped", params.getFollowShardId());
-            }
-        }
-
-        private void updateWriteQueue(Reader reader, Translog.Operation[] ops) {
-            assert Thread.holdsLock(this);
-            if (ops.length != 0) {
-                LOGGER.debug("{}[{}] received [{}] new ops", params.getFollowShardId(), reader.id, ops.length);
-                writeQueue.addAll(Arrays.asList(ops));
-                lastReadSeqNo = Math.max(lastReadSeqNo, ops[ops.length - 1].seqNo());
-            } else {
-                LOGGER.debug("{}[{}] received no new ops", params.getFollowShardId(), reader.id);
-            }
-            maybeStartWriting(false);
-        }
-
-        private void coordinate(Reader reader, long leaderGlobalCheckpoint) {
-            assert Thread.holdsLock(this);
-            this.leaderGlobalCheckpoint = Math.max(this.leaderGlobalCheckpoint, leaderGlobalCheckpoint);
-            if (nodeTask.isRunning() == false) {
-                LOGGER.info("{}[{}] stopping reader, because shard follow task has been stopped", params.getFollowShardId(), reader.id);
-                deleteReader(reader);
-                return;
-            }
-
-            long from = -1;
-            for (Reader otherReaders : readers.values()) {
-                from = Math.max(from, otherReaders.fromSeqNo);
-            }
-
-            if (from >= leaderGlobalCheckpoint) {
-                LOGGER.info("{}[{}] stopping reader, nothing more to fetch [{}/{}]",
-                    params.getFollowShardId(), reader.id, from, leaderGlobalCheckpoint);
-                deleteReader(reader);
-                return;
-            }
-
-            from += 1;
-            LOGGER.debug("{}[{}] existing reader [{}][{}]", params.getFollowShardId(), reader.id, lastReadSeqNo, leaderGlobalCheckpoint);
-            reader.read(from);
-
-            from += params.getMaxReadSize();
-            while (from <= leaderGlobalCheckpoint &&
-                readers.size() <= params.getMaxConcurrentReaders()) {
-                Reader newReader = newReader();
-                LOGGER.info("{}[{}] new reader [{}][{}]", params.getFollowShardId(), newReader.id, lastReadSeqNo, leaderGlobalCheckpoint);
-                newReader.read(from);
-                from += params.getMaxReadSize();
-            }
-        }
-
-        private void maybeFlushWriteQueue(Writer writer) {
-            assert Thread.holdsLock(this);
-            if (shouldFlush()) {
-                LOGGER.info("{}[{}] Flush threshold met", params.getFollowShardId(), writer.id);
-                flushWriteQueue(writer);
-            } else {
-                deleteWriter(writer);
-            }
-        }
-
-        private void maybeStartWriting(boolean force) {
-            assert Thread.holdsLock(this);
-            if (force && writers.isEmpty() && writeQueue.isEmpty() == false) {
-                Writer writer = newWriter();
-                LOGGER.info("{}[{}] Force flush, new writer", params.getFollowShardId(), writer.id);
-                flushWriteQueue(writer);
-            } else if (writers.isEmpty() && shouldFlush()) {
-                Writer writer = newWriter();
-                LOGGER.info("{}[{}] Flush threshold met, new writer", params.getFollowShardId(), writer.id);
-                flushWriteQueue(writer);
-            }
-        }
-
-        private boolean shouldFlush()  {
-            assert Thread.holdsLock(this);
-            boolean shouldFlush = writeQueue.size() > 1000;
-            if (shouldFlush == false) {
-                shouldFlush = writeQueue.stream().mapToLong(Translog.Operation::estimateSize).sum() > ByteSizeUnit.MB.toBytes(1);
-            }
-            return shouldFlush;
-        }
-
-        private void flushWriteQueue(Writer writer) {
-            assert Thread.holdsLock(this);
-            LOGGER.info("{}[{}]  Flushing [{}] write operations", params.getFollowShardId(), writer.id, writeQueue.size());
-            Translog.Operation[] ops = writeQueue.toArray(new Translog.Operation[0]);
-            writeQueue.clear();
-            writer.write(ops, bulkShardOperationsResponse -> {
-                long highestSeqNo = Arrays.stream(ops).mapToLong(Translog.Operation::seqNo).max().getAsLong();
-                if (highestSeqNo > lastWrittenSeqNo) {
-                    lastWrittenSeqNo = highestSeqNo;
-                    nodeTask.updateProcessedGlobalCheckpoint(lastWrittenSeqNo);
-                }
-                synchronized (this) {
-                    maybeFlushWriteQueue(writer);
-                }
-            });
-        }
-
-        final class Reader {
-
-            final int id;
-            final AtomicInteger retryCounter = new AtomicInteger(0);
-
-            long fromSeqNo;
-
-            Reader(int id) {
-                this.id = id;
-            }
-
-            void read(long fromSeqNo) {
-                assert Thread.holdsLock(FollowShardTracker.this);
-                this.fromSeqNo = fromSeqNo;
-                ShardChangesAction.Request request = new ShardChangesAction.Request(params.getLeaderShardId());
-                request.setFromSeqNo(Math.max(0, fromSeqNo));
-                request.setSize(params.getMaxReadSize());
-                LOGGER.debug("{}[{}] read [{}][{}]", params.getFollowShardId(), id, request.getFromSeqNo(), request.getSize());
-                leaderClient.execute(ShardChangesAction.INSTANCE, request, new ActionListener<ShardChangesAction.Response>() {
-                    @Override
-                    public void onResponse(ShardChangesAction.Response response) {
-                        handleShardChangesResponse(response);
-                    }
-
-                    @Override
-                    public void onFailure(Exception e) {
-                        handleFailure(retryCounter, e, () -> read(fromSeqNo));
-                    }
-                });
-            }
-
-            void handleShardChangesResponse(ShardChangesAction.Response response) {
-                versionChecker.accept(response.getIndexMetadataVersion(), e -> {
-                    if (e == null) {
-                        // Reset retry counter, because we should only fail if errors happen continuously:
-                        retryCounter.set(0);
-                        synchronized (FollowShardTracker.this) {
-                            FollowShardTracker.this.updateWriteQueue(this, response.getOperations());
-                            FollowShardTracker.this.coordinate(this, response.getLeaderGlobalCheckpoint());
-                        }
-                    } else {
-                        handleFailure(retryCounter, e, () -> handleShardChangesResponse(response));
-                    }
-                });
-            }
-
-        }
-
-        private final AtomicInteger readerCounter = new AtomicInteger(0);
-
-        private Reader newReader() {
-            assert Thread.holdsLock(this);
-            Reader reader = new Reader(readerCounter.getAndIncrement());
-            Reader previous = readers.put(reader.id, reader);
-            assert previous == null;
-            return reader;
-        }
-
-        private void deleteReader(Reader reader) {
-            assert Thread.holdsLock(this);
-            Reader previous = readers.remove(reader.id);
-            assert previous == reader;
-            int result = readerCounter.decrementAndGet();
-            assert result >= 0;
-            if (result == 0 && writeQueue.isEmpty() == false) {
-                maybeStartWriting(true);
-            }
-        }
-
-        final class Writer {
-
-            final int id;
-            final AtomicInteger retryCounter = new AtomicInteger(0);
-
-            Writer(int id) {
-                this.id = id;
-            }
-
-            private void write(Translog.Operation[] operations, Consumer<BulkShardOperationsResponse> responseHandler) {
-                assert Thread.holdsLock(FollowShardTracker.this);
-                final BulkShardOperationsRequest request = new BulkShardOperationsRequest(params.getFollowShardId(), operations);
-                followerClient.execute(BulkShardOperationsAction.INSTANCE, request,
-                    new ActionListener<BulkShardOperationsResponse>() {
-                        @Override
-                        public void onResponse(BulkShardOperationsResponse response) {
-                            retryCounter.set(0);
-                            responseHandler.accept(response);
-                        }
-
-                        @Override
-                        public void onFailure(Exception e) {
-                            handleFailure(retryCounter, e, () -> write(operations, responseHandler));
-                        }
-                    }
-                );
-            }
-        }
-
-        private final AtomicInteger writerCounter = new AtomicInteger(0);
-
-        private Writer newWriter() {
-            assert Thread.holdsLock(this);
-            Writer writer = new Writer(writerCounter.getAndIncrement());
-            Writer previous = writers.put(writer.id, writer);
-            assert previous == null;
-            return writer;
-        }
-
-        private void deleteWriter(Writer writer) {
-            assert Thread.holdsLock(this);
-            Writer previous = writers.remove(writer.id);
-            assert previous == writer;
-            int result = writerCounter.decrementAndGet();
-            assert result >= 0;
-        }
-
-        private void handleFailure(AtomicInteger retryCounter, Exception e, Runnable task) {
-            assert e != null;
-            if (shouldRetry(e)) {
-                if (nodeTask.isRunning() && retryCounter.incrementAndGet() <= PROCESSOR_RETRY_LIMIT) {
-                    scheduler.apply(RETRY_TIMEOUT, () -> {
-                        synchronized (this) {
-                            task.run();
-                        }
-                    });
-                } else {
-                    nodeTask.markAsFailed(new ElasticsearchException("retrying failed [" + retryCounter.get() +
-                        "] times, aborting...", e));
-                }
-            } else {
-                nodeTask.markAsFailed(e);
-            }
-        }
-
-        private boolean shouldRetry(Exception e) {
-            // TODO: What other exceptions should be retried?
-            return NetworkExceptionHelper.isConnectException(e) ||
-                NetworkExceptionHelper.isCloseConnectionException(e) ||
-                e instanceof ActionTransportException ||
-                e instanceof NodeClosedException ||
-                e instanceof UnavailableShardsException ||
-                e instanceof NoShardAvailableActionException;
-        }
-
-    }
-
-    static Client wrapClient(Client client, ShardFollowTask shardFollowTask) {
+    private static Client wrapClient(Client client, ShardFollowTask shardFollowTask) {
         if (shardFollowTask.getHeaders().isEmpty()) {
             return client;
         } else {
@@ -482,78 +156,6 @@ public class ShardFollowTasksExecutor extends PersistentTasksExecutor<ShardFollo
         final ThreadContext.StoredContext storedContext = threadContext.stashContext();
         threadContext.copyHeaders(headers.entrySet());
         return storedContext;
-    }
-
-    static final class IndexMetadataVersionChecker implements BiConsumer<Long, Consumer<Exception>> {
-
-        private static final Logger LOGGER = Loggers.getLogger(IndexMetadataVersionChecker.class);
-
-        private final Client followClient;
-        private final Client leaderClient;
-        private final Index leaderIndex;
-        private final Index followIndex;
-        private final AtomicLong currentIndexMetadataVersion;
-        private final Semaphore updateMappingSemaphore = new Semaphore(1);
-
-        IndexMetadataVersionChecker(Index leaderIndex, Index followIndex, Client followClient, Client leaderClient) {
-            this.followClient = followClient;
-            this.leaderIndex = leaderIndex;
-            this.followIndex = followIndex;
-            this.leaderClient = leaderClient;
-            this.currentIndexMetadataVersion = new AtomicLong();
-        }
-
-        public void accept(Long minimumRequiredIndexMetadataVersion, Consumer<Exception> handler) {
-            if (currentIndexMetadataVersion.get() >= minimumRequiredIndexMetadataVersion) {
-                LOGGER.debug("Current index metadata version [{}] is higher or equal than minimum required index metadata version [{}]",
-                    currentIndexMetadataVersion.get(), minimumRequiredIndexMetadataVersion);
-                handler.accept(null);
-            } else {
-                updateMapping(minimumRequiredIndexMetadataVersion, handler);
-            }
-        }
-
-        void updateMapping(long minimumRequiredIndexMetadataVersion, Consumer<Exception> handler) {
-            try {
-                updateMappingSemaphore.acquire();
-            } catch (InterruptedException e) {
-                handler.accept(e);
-                return;
-            }
-            if (currentIndexMetadataVersion.get() >= minimumRequiredIndexMetadataVersion) {
-                updateMappingSemaphore.release();
-                LOGGER.debug("Current index metadata version [{}] is higher or equal than minimum required index metadata version [{}]",
-                    currentIndexMetadataVersion.get(), minimumRequiredIndexMetadataVersion);
-                handler.accept(null);
-                return;
-            }
-
-            ClusterStateRequest clusterStateRequest = new ClusterStateRequest();
-            clusterStateRequest.clear();
-            clusterStateRequest.metaData(true);
-            clusterStateRequest.indices(leaderIndex.getName());
-
-            leaderClient.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
-                IndexMetaData indexMetaData = clusterStateResponse.getState().metaData().getIndexSafe(leaderIndex);
-                assert indexMetaData.getMappings().size() == 1;
-                MappingMetaData mappingMetaData = indexMetaData.getMappings().iterator().next().value;
-
-                PutMappingRequest putMappingRequest = new PutMappingRequest(followIndex.getName());
-                putMappingRequest.type(mappingMetaData.type());
-                putMappingRequest.source(mappingMetaData.source().string(), XContentType.JSON);
-                followClient.admin().indices().putMapping(putMappingRequest, ActionListener.wrap(putMappingResponse -> {
-                    currentIndexMetadataVersion.set(indexMetaData.getVersion());
-                    updateMappingSemaphore.release();
-                    handler.accept(null);
-                }, e -> {
-                    updateMappingSemaphore.release();
-                    handler.accept(e);
-                }));
-            }, e -> {
-                updateMappingSemaphore.release();
-                handler.accept(e);
-            }));
-        }
     }
 
 }

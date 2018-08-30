@@ -66,7 +66,7 @@ public class FollowIndexIT extends ESRestTestCase {
             createAndFollowIndex("leader_cluster:" + leaderIndexName, followIndexName);
             assertBusy(() -> verifyDocuments(followIndexName, numDocs));
             // unfollow and then follow and then index a few docs in leader index:
-            unfollowIndex(followIndexName);
+            unFollowIndex(followIndexName);
             followIndex("leader_cluster:" + leaderIndexName, followIndexName);
             try (RestClient leaderClient = buildLeaderClient()) {
                 int id = numDocs;
@@ -105,8 +105,8 @@ public class FollowIndexIT extends ESRestTestCase {
         assertOK(client().performRequest(request));
     }
 
-    private static void unfollowIndex(String followIndex) throws IOException {
-        assertOK(client().performRequest(new Request("POST", "/" + followIndex + "/_ccr/unfollow")));
+    private static void unFollowIndex(String followIndex) throws IOException {
+        assertOK(client().performRequest(new Request("POST", "/" + followIndex + "/_ccr/un_follow")));
     }
 
     private static void verifyDocuments(String index, int expectedNumDocs) throws IOException {

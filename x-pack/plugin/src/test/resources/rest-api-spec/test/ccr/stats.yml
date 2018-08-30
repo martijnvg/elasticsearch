@@ -51,7 +51,7 @@
   - gte: { bar.0.time_since_last_fetch_millis: -1 }
 
   - do:
-      ccr.unfollow_index:
+      ccr.un_follow_index:
         index: bar
   - is_true: acknowledged
 

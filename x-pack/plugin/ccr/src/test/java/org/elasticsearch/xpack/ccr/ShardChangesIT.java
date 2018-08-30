@@ -43,7 +43,7 @@ import org.elasticsearch.xpack.ccr.action.FollowIndexAction;
 import org.elasticsearch.xpack.ccr.action.ShardChangesAction;
 import org.elasticsearch.xpack.ccr.action.ShardFollowNodeTask;
 import org.elasticsearch.xpack.ccr.action.ShardFollowTask;
-import org.elasticsearch.xpack.ccr.action.UnfollowIndexAction;
+import org.elasticsearch.xpack.ccr.action.UnFollowIndexAction;
 import org.elasticsearch.xpack.core.XPackSettings;
 
 import java.io.IOException;
@@ -413,9 +413,9 @@ public class ShardChangesIT extends ESIntegTestCase {
     }
 
     public void testUnfollowNonExistingIndex() {
-        UnfollowIndexAction.Request unfollowRequest = new UnfollowIndexAction.Request();
+        UnFollowIndexAction.Request unfollowRequest = new UnFollowIndexAction.Request();
         unfollowRequest.setFollowIndex("non-existing-index");
-        expectThrows(IllegalArgumentException.class, () -> client().execute(UnfollowIndexAction.INSTANCE, unfollowRequest).actionGet());
+        expectThrows(IllegalArgumentException.class, () -> client().execute(UnFollowIndexAction.INSTANCE, unfollowRequest).actionGet());
     }
 
     public void testFollowNonExistentIndex() throws Exception {
@@ -530,9 +530,9 @@ public class ShardChangesIT extends ESIntegTestCase {
     }
 
     private void unfollowIndex(String index) throws Exception {
-        final UnfollowIndexAction.Request unfollowRequest = new UnfollowIndexAction.Request();
+        final UnFollowIndexAction.Request unfollowRequest = new UnFollowIndexAction.Request();
         unfollowRequest.setFollowIndex(index);
-        client().execute(UnfollowIndexAction.INSTANCE, unfollowRequest).get();
+        client().execute(UnFollowIndexAction.INSTANCE, unfollowRequest).get();
         assertBusy(() -> {
             final ClusterState clusterState = client().admin().cluster().prepareState().get().getState();
             final PersistentTasksCustomMetaData tasks = clusterState.getMetaData().custom(PersistentTasksCustomMetaData.TYPE);

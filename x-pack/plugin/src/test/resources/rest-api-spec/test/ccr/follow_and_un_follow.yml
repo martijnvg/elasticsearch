@@ -1,5 +1,5 @@
 ---
-"Test follow and unfollow an existing index":
+"Test follow and un_follow an existing index":
   - do:
       indices.create:
         index: foo
@@ -25,7 +25,7 @@
   - is_true: index_following_started
 
   - do:
-      ccr.unfollow_index:
+      ccr.un_follow_index:
         index: bar
   - is_true: acknowledged
 
@@ -37,6 +37,6 @@
   - is_true: acknowledged
 
   - do:
-      ccr.unfollow_index:
+      ccr.un_follow_index:
         index: bar
   - is_true: acknowledged

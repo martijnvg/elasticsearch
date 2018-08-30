@@ -76,7 +76,7 @@ public class FollowIndexSecurityIT extends ESRestTestCase {
             createAndFollowIndex("leader_cluster:" + allowedIndex, allowedIndex);
             assertBusy(() -> verifyDocuments(client(), allowedIndex, numDocs));
             assertThat(countCcrNodeTasks(), equalTo(1));
-            assertOK(client().performRequest(new Request("POST", "/" + allowedIndex + "/_ccr/unfollow")));
+            assertOK(client().performRequest(new Request("POST", "/" + allowedIndex + "/_ccr/un_follow")));
             // Make sure that there are no other ccr relates operations running:
             assertBusy(() -> {
                 Map<String, Object> clusterState = toMap(adminClient().performRequest(new Request("GET", "/_cluster/state")));
@@ -87,7 +87,7 @@ public class FollowIndexSecurityIT extends ESRestTestCase {
 
             followIndex("leader_cluster:" + allowedIndex, allowedIndex);
             assertThat(countCcrNodeTasks(), equalTo(1));
-            assertOK(client().performRequest(new Request("POST", "/" + allowedIndex + "/_ccr/unfollow")));
+            assertOK(client().performRequest(new Request("POST", "/" + allowedIndex + "/_ccr/un_follow")));
             // Make sure that there are no other ccr relates operations running:
             assertBusy(() -> {
                 Map<String, Object> clusterState = toMap(adminClient().performRequest(new Request("GET", "/_cluster/state")));

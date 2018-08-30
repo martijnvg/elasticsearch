@@ -28,12 +28,12 @@ import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
-public class UnfollowIndexAction extends Action<UnfollowIndexAction.Response> {
+public class UnFollowIndexAction extends Action<UnFollowIndexAction.Response> {
 
-    public static final UnfollowIndexAction INSTANCE = new UnfollowIndexAction();
-    public static final String NAME = "cluster:admin/xpack/ccr/unfollow_index";
+    public static final UnFollowIndexAction INSTANCE = new UnFollowIndexAction();
+    public static final String NAME = "cluster:admin/xpack/ccr/un_follow_index";
 
-    private UnfollowIndexAction() {
+    private UnFollowIndexAction() {
         super(NAME);
     }
 

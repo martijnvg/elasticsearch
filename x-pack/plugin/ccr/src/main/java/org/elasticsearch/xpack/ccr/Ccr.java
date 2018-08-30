@@ -47,14 +47,14 @@ import org.elasticsearch.xpack.ccr.action.ShardFollowNodeTask;
 import org.elasticsearch.xpack.ccr.action.ShardFollowTask;
 import org.elasticsearch.xpack.ccr.action.ShardFollowTasksExecutor;
 import org.elasticsearch.xpack.ccr.action.TransportCcrStatsAction;
-import org.elasticsearch.xpack.ccr.action.UnfollowIndexAction;
+import org.elasticsearch.xpack.ccr.action.UnFollowIndexAction;
 import org.elasticsearch.xpack.ccr.action.bulk.BulkShardOperationsAction;
 import org.elasticsearch.xpack.ccr.action.bulk.TransportBulkShardOperationsAction;
 import org.elasticsearch.xpack.ccr.index.engine.FollowingEngineFactory;
 import org.elasticsearch.xpack.ccr.rest.RestCcrStatsAction;
 import org.elasticsearch.xpack.ccr.rest.RestCreateAndFollowIndexAction;
 import org.elasticsearch.xpack.ccr.rest.RestFollowIndexAction;
-import org.elasticsearch.xpack.ccr.rest.RestUnfollowIndexAction;
+import org.elasticsearch.xpack.ccr.rest.RestUnFollowIndexAction;
 import org.elasticsearch.xpack.core.XPackPlugin;
 
 import java.util.Arrays;
@@ -133,7 +133,7 @@ public class Ccr extends Plugin implements ActionPlugin, PersistentTaskPlugin, E
                 new ActionHandler<>(CreateAndFollowIndexAction.INSTANCE, CreateAndFollowIndexAction.TransportAction.class),
                 new ActionHandler<>(FollowIndexAction.INSTANCE, FollowIndexAction.TransportAction.class),
                 new ActionHandler<>(ShardChangesAction.INSTANCE, ShardChangesAction.TransportAction.class),
-                new ActionHandler<>(UnfollowIndexAction.INSTANCE, UnfollowIndexAction.TransportAction.class));
+                new ActionHandler<>(UnFollowIndexAction.INSTANCE, UnFollowIndexAction.TransportAction.class));
     }
 
     public List<RestHandler> getRestHandlers(Settings settings, RestController restController, ClusterSettings clusterSettings,
@@ -144,7 +144,7 @@ public class Ccr extends Plugin implements ActionPlugin, PersistentTaskPlugin, E
                 new RestCcrStatsAction(settings, restController),
                 new RestCreateAndFollowIndexAction(settings, restController),
                 new RestFollowIndexAction(settings, restController),
-                new RestUnfollowIndexAction(settings, restController));
+                new RestUnFollowIndexAction(settings, restController));
     }
 
     public List<NamedWriteableRegistry.Entry> getNamedWriteables() {

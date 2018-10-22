@@ -94,22 +94,22 @@ public final class TransportPutFollowAction
             listener.onFailure(LicenseUtils.newComplianceException("ccr"));
             return;
         }
-        String leaderCluster = request.getFollowRequest().getLeaderCluster();
+        String remoteCluster = request.getFollowRequest().getRemoteCluster();
         // Validates whether the leader cluster has been configured properly:
-        client.getRemoteClusterClient(leaderCluster);
+        client.getRemoteClusterClient(remoteCluster);
 
         String leaderIndex = request.getFollowRequest().getLeaderIndex();
-        createFollowerIndexAndFollowRemoteIndex(request, leaderCluster, leaderIndex, listener);
+        createFollowerIndexAndFollowRemoteIndex(request, remoteCluster, leaderIndex, listener);
     }
 
     private void createFollowerIndexAndFollowRemoteIndex(
             final PutFollowAction.Request request,
-            final String leaderCluster,
+            final String remoetCluster,
             final String leaderIndex,
             final ActionListener<PutFollowAction.Response> listener) {
         ccrLicenseChecker.checkRemoteClusterLicenseAndFetchLeaderIndexMetadataAndHistoryUUIDs(
                 client,
-                leaderCluster,
+                remoetCluster,
                 leaderIndex,
                 listener::onFailure,
                 (historyUUID, leaderIndexMetaData) -> createFollowerIndex(leaderIndexMetaData, historyUUID, request, listener));

@@ -929,7 +929,7 @@
         },
         "ccr_stats": {
           "properties": {
-            "leader_cluster": {
+            "remote_cluster": {
               "type": "keyword"
             },
             "leader_index": {

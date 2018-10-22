@@ -33,35 +33,35 @@ public class DeleteAutoFollowPatternAction extends Action<AcknowledgedResponse> 
 
     public static class Request extends AcknowledgedRequest<Request> {
 
-        private String leaderCluster;
+        private String remoteCluster;
 
         @Override
         public ActionRequestValidationException validate() {
             ActionRequestValidationException validationException = null;
-            if (leaderCluster == null) {
-                validationException = addValidationError("leaderCluster is missing", validationException);
+            if (remoteCluster == null) {
+                validationException = addValidationError("remoteCluster is missing", validationException);
             }
             return validationException;
         }
 
-        public String getLeaderCluster() {
-            return leaderCluster;
+        public String getRemoteCluster() {
+            return remoteCluster;
         }
 
-        public void setLeaderCluster(String leaderCluster) {
-            this.leaderCluster = leaderCluster;
+        public void setRemoteCluster(String remoteCluster) {
+            this.remoteCluster = remoteCluster;
         }
 
         @Override
         public void readFrom(StreamInput in) throws IOException {
             super.readFrom(in);
-            leaderCluster = in.readString();
+            remoteCluster = in.readString();
         }
 
         @Override
         public void writeTo(StreamOutput out) throws IOException {
             super.writeTo(out);
-            out.writeString(leaderCluster);
+            out.writeString(remoteCluster);
         }
 
         @Override
@@ -69,12 +69,12 @@ public class DeleteAutoFollowPatternAction extends Action<AcknowledgedResponse> 
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             Request request = (Request) o;
-            return Objects.equals(leaderCluster, request.leaderCluster);
+            return Objects.equals(remoteCluster, request.remoteCluster);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(leaderCluster);
+            return Objects.hash(remoteCluster);
         }
     }
 

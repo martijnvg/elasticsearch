@@ -113,7 +113,7 @@ public class AutoFollowIT extends CCRIntegTestCase {
 
         // Enabling auto following:
         PutAutoFollowPatternAction.Request request = new PutAutoFollowPatternAction.Request();
-        request.setLeaderCluster("leader_cluster");
+        request.setRemoteCluster("leader_cluster");
         request.setLeaderIndexPatterns(Collections.singletonList("logs-*"));
         // Need to set this, because following an index in the same cluster
         request.setFollowIndexNamePattern("copy-{{leader_index}}");
@@ -175,7 +175,7 @@ public class AutoFollowIT extends CCRIntegTestCase {
 
     private void putAutoFollowPatterns(String... patterns) {
         PutAutoFollowPatternAction.Request request = new PutAutoFollowPatternAction.Request();
-        request.setLeaderCluster("leader_cluster");
+        request.setRemoteCluster("leader_cluster");
         request.setLeaderIndexPatterns(Arrays.asList(patterns));
         // Need to set this, because following an index in the same cluster
         request.setFollowIndexNamePattern("copy-{{leader_index}}");
@@ -184,7 +184,7 @@ public class AutoFollowIT extends CCRIntegTestCase {
 
     private void deleteAutoFollowPatternSetting() {
         DeleteAutoFollowPatternAction.Request request = new DeleteAutoFollowPatternAction.Request();
-        request.setLeaderCluster("leader_cluster");
+        request.setRemoteCluster("leader_cluster");
         assertTrue(followerClient().execute(DeleteAutoFollowPatternAction.INSTANCE, request).actionGet().isAcknowledged());
     }
 

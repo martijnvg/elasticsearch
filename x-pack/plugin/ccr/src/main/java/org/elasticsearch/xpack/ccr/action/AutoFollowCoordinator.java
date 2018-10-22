@@ -158,7 +158,7 @@ public class AutoFollowCoordinator implements ClusterStateApplier {
 
             @Override
             void getLeaderClusterState(final Map<String, String> headers,
-                                       final String leaderClusterAlias,
+                                       final String remoteCluster,
                                        final BiConsumer<ClusterState, Exception> handler) {
                 final ClusterStateRequest request = new ClusterStateRequest();
                 request.clear();
@@ -167,7 +167,7 @@ public class AutoFollowCoordinator implements ClusterStateApplier {
                 ccrLicenseChecker.checkRemoteClusterLicenseAndFetchClusterState(
                     client,
                     headers,
-                    leaderClusterAlias,
+                    remoteCluster,
                     request,
                     e -> handler.accept(null, e),
                     leaderClusterState -> handler.accept(leaderClusterState, null));
@@ -287,7 +287,7 @@ public class AutoFollowCoordinator implements ClusterStateApplier {
             }
         }
 
-        private void followLeaderIndex(String clusterAlias,
+        private void followLeaderIndex(String remoteCluster,
                                        Index indexToFollow,
                                        AutoFollowPattern pattern,
                                        Map<String,String> headers,
@@ -296,7 +296,7 @@ public class AutoFollowCoordinator implements ClusterStateApplier {
             final String followIndexName = getFollowerIndexName(pattern, leaderIndexName);
 
             ResumeFollowAction.Request request = new ResumeFollowAction.Request();
-            request.setLeaderCluster(clusterAlias);
+            request.setRemoteCluster(remoteCluster);
             request.setLeaderIndex(indexToFollow.getName());
             request.setFollowerIndex(followIndexName);
             request.setMaxBatchOperationCount(pattern.getMaxBatchOperationCount());
@@ -313,7 +313,7 @@ public class AutoFollowCoordinator implements ClusterStateApplier {
 
                 // This function updates the auto follow metadata in the cluster to record that the leader index has been followed:
                 // (so that we do not try to follow it in subsequent auto follow runs)
-                Function<ClusterState, ClusterState> function = recordLeaderIndexAsFollowFunction(clusterAlias, indexToFollow);
+                Function<ClusterState, ClusterState> function = recordLeaderIndexAsFollowFunction(remoteCluster, indexToFollow);
                 // The coordinator always runs on the elected master node, so we can update cluster state here:
                 updateAutoFollowMetadata(function, onResult);
             };
@@ -328,7 +328,7 @@ public class AutoFollowCoordinator implements ClusterStateApplier {
             }
         }
 
-        static List<Index> getLeaderIndicesToFollow(String clusterAlias,
+        static List<Index> getLeaderIndicesToFollow(String remoteCluster,
                                                     AutoFollowPattern autoFollowPattern,
                                                     ClusterState leaderClusterState,
                                                     ClusterState followerClusterState,
@@ -380,12 +380,12 @@ public class AutoFollowCoordinator implements ClusterStateApplier {
          * Fetch the cluster state from the leader with the specified cluster alias
          *
          * @param headers            the client headers
-         * @param leaderClusterAlias the cluster alias of the leader
+         * @param remoteCluster      the name of the leader cluster
          * @param handler            the callback to invoke
          */
         abstract void getLeaderClusterState(
             Map<String, String> headers,
-            String leaderClusterAlias,
+            String remoteCluster,
             BiConsumer<ClusterState, Exception> handler
         );
 

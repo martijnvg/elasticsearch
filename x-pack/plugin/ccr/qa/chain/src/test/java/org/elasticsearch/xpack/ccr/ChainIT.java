@@ -113,7 +113,7 @@ public class ChainIT extends ESRestTestCase {
     private static void followIndex(String leaderCluster, String leaderIndex, String followIndex) throws IOException {
         final Request request = new Request("PUT", "/" + followIndex + "/_ccr/follow");
         request.setJsonEntity(
-                "{\"leader_cluster\": \"" + leaderCluster + "\", \"leader_index\": \"" + leaderIndex + "\", \"poll_timeout\": \"10ms\"}");
+                "{\"remote_cluster\": \"" + leaderCluster + "\", \"leader_index\": \"" + leaderIndex + "\", \"poll_timeout\": \"10ms\"}");
         assertOK(client().performRequest(request));
     }
 

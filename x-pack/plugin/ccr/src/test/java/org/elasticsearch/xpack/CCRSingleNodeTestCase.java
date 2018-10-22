@@ -65,7 +65,7 @@ public abstract class CCRSingleNodeTestCase extends ESSingleNodeTestCase {
 
     protected ResumeFollowAction.Request getFollowRequest() {
         ResumeFollowAction.Request request = new ResumeFollowAction.Request();
-        request.setLeaderCluster("local");
+        request.setRemoteCluster("local");
         request.setLeaderIndex("leader");
         request.setFollowerIndex("follower");
         request.setMaxRetryDelay(TimeValue.timeValueMillis(10));

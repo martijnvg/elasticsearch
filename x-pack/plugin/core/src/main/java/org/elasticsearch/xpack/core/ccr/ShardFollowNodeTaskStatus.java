@@ -34,7 +34,7 @@ public class ShardFollowNodeTaskStatus implements Task.Status {
 
     public static final String STATUS_PARSER_NAME = "shard-follow-node-task-status";
 
-    private static final ParseField LEADER_CLUSTER = new ParseField("leader_cluster");
+    private static final ParseField LEADER_CLUSTER = new ParseField("remote_cluster");
     private static final ParseField LEADER_INDEX = new ParseField("leader_index");
     private static final ParseField FOLLOWER_INDEX = new ParseField("follower_index");
     private static final ParseField SHARD_ID = new ParseField("shard_id");
@@ -144,10 +144,10 @@ public class ShardFollowNodeTaskStatus implements Task.Status {
                 FETCH_EXCEPTIONS_ENTRY_EXCEPTION);
     }
 
-    private final String leaderCluster;
+    private final String remoteCluster;
 
-    public String getLeaderCluster() {
-        return leaderCluster;
+    public String getRemoteCluster() {
+        return remoteCluster;
     }
 
     private final String leaderIndex;
@@ -295,7 +295,7 @@ public class ShardFollowNodeTaskStatus implements Task.Status {
     }
 
     public ShardFollowNodeTaskStatus(
-            final String leaderCluster,
+            final String remoteCluster,
             final String leaderIndex,
             final String followerIndex,
             final int shardId,
@@ -320,7 +320,7 @@ public class ShardFollowNodeTaskStatus implements Task.Status {
             final NavigableMap<Long, Tuple<Integer, ElasticsearchException>> fetchExceptions,
             final long timeSinceLastFetchMillis,
             final ElasticsearchException fatalException) {
-        this.leaderCluster = leaderCluster;
+        this.remoteCluster = remoteCluster;
         this.leaderIndex = leaderIndex;
         this.followerIndex = followerIndex;
         this.shardId = shardId;
@@ -348,7 +348,7 @@ public class ShardFollowNodeTaskStatus implements Task.Status {
     }
 
     public ShardFollowNodeTaskStatus(final StreamInput in) throws IOException {
-        this.leaderCluster = in.readOptionalString();
+        this.remoteCluster = in.readOptionalString();
         this.leaderIndex = in.readString();
         this.followerIndex = in.readString();
         this.shardId = in.readVInt();
@@ -383,7 +383,7 @@ public class ShardFollowNodeTaskStatus implements Task.Status {
 
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
-        out.writeOptionalString(leaderCluster);
+        out.writeOptionalString(remoteCluster);
         out.writeString(leaderIndex);
         out.writeString(followerIndex);
         out.writeVInt(shardId);
@@ -427,7 +427,7 @@ public class ShardFollowNodeTaskStatus implements Task.Status {
     }
 
     public XContentBuilder toXContentFragment(final XContentBuilder builder, final Params params) throws IOException {
-        builder.field(LEADER_CLUSTER.getPreferredName(), leaderCluster);
+        builder.field(LEADER_CLUSTER.getPreferredName(), remoteCluster);
         builder.field(LEADER_INDEX.getPreferredName(), leaderIndex);
         builder.field(FOLLOWER_INDEX.getPreferredName(), followerIndex);
         builder.field(SHARD_ID.getPreferredName(), shardId);
@@ -502,7 +502,7 @@ public class ShardFollowNodeTaskStatus implements Task.Status {
         final ShardFollowNodeTaskStatus that = (ShardFollowNodeTaskStatus) o;
         String fatalExceptionMessage = fatalException != null ? fatalException.getMessage() : null;
         String otherFatalExceptionMessage = that.fatalException != null ? that.fatalException.getMessage() : null;
-        return leaderCluster.equals(that.leaderCluster) &&
+        return remoteCluster.equals(that.remoteCluster) &&
                 leaderIndex.equals(that.leaderIndex) &&
                 followerIndex.equals(that.followerIndex) &&
                 shardId == that.shardId &&
@@ -538,7 +538,7 @@ public class ShardFollowNodeTaskStatus implements Task.Status {
     public int hashCode() {
         String fatalExceptionMessage = fatalException != null ? fatalException.getMessage() : null;
         return Objects.hash(
-            leaderCluster,
+                remoteCluster,
                 leaderIndex,
                 followerIndex,
                 shardId,

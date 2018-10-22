@@ -20,7 +20,7 @@ public class GetAutoFollowPatternRequestTests extends AbstractWireSerializingTes
     protected GetAutoFollowPatternAction.Request createTestInstance() {
         GetAutoFollowPatternAction.Request request = new GetAutoFollowPatternAction.Request();
         if (randomBoolean()) {
-            request.setLeaderCluster(randomAlphaOfLength(4));
+            request.setRemoteCluster(randomAlphaOfLength(4));
         }
         return request;
     }

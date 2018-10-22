@@ -97,12 +97,12 @@ public class TransportResumeFollowAction extends HandledTransportAction<ResumeFo
             listener.onFailure(LicenseUtils.newComplianceException("ccr"));
             return;
         }
-        final String clusterAlias = request.getLeaderCluster();
+        final String remoteCluster = request.getRemoteCluster();
         // Validates whether the leader cluster has been configured properly:
-        client.getRemoteClusterClient(clusterAlias);
+        client.getRemoteClusterClient(remoteCluster);
 
         final String leaderIndex = request.getLeaderIndex();
-        followRemoteIndex(request, clusterAlias, leaderIndex, listener);
+        followRemoteIndex(request, remoteCluster, leaderIndex, listener);
     }
 
     private void followRemoteIndex(
@@ -207,7 +207,7 @@ public class TransportResumeFollowAction extends HandledTransportAction<ResumeFo
             final IndexMetaData followIndex,
             final String[] leaderIndexHistoryUUID,
             final MapperService followerMapperService) {
-        String leaderIndexName = request.getLeaderCluster() + ":" + request.getLeaderIndex();
+        String leaderIndexName = request.getRemoteCluster() + ":" + request.getLeaderIndex();
         if (leaderIndex == null) {
             throw new IllegalArgumentException("leader index [" + leaderIndexName + "] does not exist");
         }

@@ -348,7 +348,7 @@ public abstract class CcrIntegTestCase extends ESTestCase {
             final PauseFollowAction.Request unfollowRequest = new PauseFollowAction.Request(index);
             followerClient().execute(PauseFollowAction.INSTANCE, unfollowRequest).get();
         }
-        ensureNoCcrTasks();
+//        ensureNoCcrTasks();
     }
 
     protected void ensureNoCcrTasks() throws Exception {

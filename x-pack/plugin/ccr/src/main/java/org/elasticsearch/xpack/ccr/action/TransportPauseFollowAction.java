@@ -10,6 +10,7 @@ import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.support.ActionFilters;
 import org.elasticsearch.action.support.master.AcknowledgedResponse;
 import org.elasticsearch.action.support.master.TransportMasterNodeAction;
+import org.elasticsearch.client.Client;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.block.ClusterBlockException;
 import org.elasticsearch.cluster.block.ClusterBlockLevel;
@@ -27,7 +28,7 @@ import java.util.stream.Collectors;
 
 public class TransportPauseFollowAction extends TransportMasterNodeAction<PauseFollowAction.Request, AcknowledgedResponse> {
 
-    private final PersistentTasksService persistentTasksService;
+    private final Client client;
 
     @Inject
     public TransportPauseFollowAction(
@@ -36,10 +37,10 @@ public class TransportPauseFollowAction extends TransportMasterNodeAction<PauseF
             final ClusterService clusterService,
             final ThreadPool threadPool,
             final IndexNameExpressionResolver indexNameExpressionResolver,
-            final PersistentTasksService persistentTasksService) {
+            final Client client) {
         super(PauseFollowAction.NAME, transportService, clusterService, threadPool, actionFilters,
             PauseFollowAction.Request::new, indexNameExpressionResolver);
-        this.persistentTasksService = persistentTasksService;
+        this.client = client;
     }
 
     @Override
@@ -56,32 +57,8 @@ public class TransportPauseFollowAction extends TransportMasterNodeAction<PauseF
     protected void masterOperation(PauseFollowAction.Request request,
                                    ClusterState state,
                                    ActionListener<AcknowledgedResponse> listener) throws Exception {
-        PersistentTasksCustomMetaData persistentTasksMetaData = state.metaData().custom(PersistentTasksCustomMetaData.TYPE);
-        if (persistentTasksMetaData == null) {
-            listener.onFailure(new IllegalArgumentException("no shard follow tasks for [" + request.getFollowIndex() + "]"));
-            return;
-        }
-
-        List<String> shardFollowTaskIds = persistentTasksMetaData.tasks().stream()
-            .filter(persistentTask -> ShardFollowTask.NAME.equals(persistentTask.getTaskName()))
-            .filter(persistentTask -> {
-                ShardFollowTask shardFollowTask = (ShardFollowTask) persistentTask.getParams();
-                return shardFollowTask.getFollowShardId().getIndexName().equals(request.getFollowIndex());
-            })
-            .map(PersistentTasksCustomMetaData.PersistentTask::getId)
-            .collect(Collectors.toList());
-
-        if (shardFollowTaskIds.isEmpty()) {
-            listener.onFailure(new IllegalArgumentException("no shard follow tasks for [" + request.getFollowIndex() + "]"));
-            return;
-        }
-
-        int i = 0;
-        final ResponseHandler responseHandler = new ResponseHandler(shardFollowTaskIds.size(), listener);
-        for (String taskId : shardFollowTaskIds) {
-            final int taskSlot = i++;
-            persistentTasksService.sendRemoveRequest(taskId, responseHandler.getActionListener(taskSlot));
-        }
+        client.execute(PauseShardFollowTasksAction.INSTANCE, new PauseShardFollowTasksAction.Request(request.getFollowIndex()),
+            ActionListener.wrap(response -> listener.onResponse(new AcknowledgedResponse(true)), listener::onFailure));
     }
 
     @Override

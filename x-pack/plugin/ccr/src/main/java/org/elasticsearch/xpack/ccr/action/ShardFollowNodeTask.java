@@ -89,6 +89,7 @@ public abstract class ShardFollowNodeTask extends AllocatedPersistentTask {
     private long bufferSizeInBytes = 0;
     private final LinkedHashMap<Long, Tuple<AtomicInteger, ElasticsearchException>> fetchExceptions;
 
+    private volatile boolean stopped = false;
     private volatile ElasticsearchException fatalException;
 
     ShardFollowNodeTask(long id, String type, String action, String description, TaskId parentTask, Map<String, String> headers,
@@ -148,6 +149,10 @@ public abstract class ShardFollowNodeTask extends AllocatedPersistentTask {
                 coordinateReads();
             });
         });
+    }
+
+    void stop() {
+        stopped = true;
     }
 
     synchronized void coordinateReads() {
@@ -491,7 +496,7 @@ public abstract class ShardFollowNodeTask extends AllocatedPersistentTask {
     }
 
     protected boolean isStopped() {
-        return fatalException != null || isCancelled() || isCompleted();
+        return stopped || fatalException != null || isCancelled() || isCompleted();
     }
 
     public ShardId getFollowShardId() {

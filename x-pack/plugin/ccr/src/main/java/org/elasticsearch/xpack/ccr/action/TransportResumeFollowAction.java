@@ -41,6 +41,7 @@ import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.indices.IndicesRequestCache;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.license.LicenseUtils;
+import org.elasticsearch.persistent.PersistentTasksCustomMetaData;
 import org.elasticsearch.persistent.PersistentTasksService;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.transport.TransportService;
@@ -53,6 +54,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -114,14 +116,14 @@ public class TransportResumeFollowAction extends TransportMasterNodeAction<Resum
 
     @Override
     protected void masterOperation(final ResumeFollowAction.Request request,
-                                   ClusterState state,
+                                   ClusterState localState,
                                    final ActionListener<AcknowledgedResponse> listener) throws Exception {
         if (ccrLicenseChecker.isCcrAllowed() == false) {
             listener.onFailure(LicenseUtils.newComplianceException("ccr"));
             return;
         }
 
-        final IndexMetaData followerIndexMetadata = state.getMetaData().index(request.getFollowerIndex());
+        final IndexMetaData followerIndexMetadata = localState.getMetaData().index(request.getFollowerIndex());
         if (followerIndexMetadata == null) {
             listener.onFailure(new IndexNotFoundException(request.getFollowerIndex()));
             return;
@@ -142,11 +144,52 @@ public class TransportResumeFollowAction extends TransportMasterNodeAction<Resum
             listener::onFailure,
             (leaderHistoryUUID, leaderIndexMetadata) -> {
                 try {
-                    start(request, leaderCluster, leaderIndexMetadata, followerIndexMetadata, leaderHistoryUUID, listener);
+                    removeExistingShardFollowTasks(request, leaderCluster, leaderIndexMetadata, followerIndexMetadata,
+                        leaderHistoryUUID, listener, localState);
                 } catch (final IOException e) {
                     listener.onFailure(e);
                 }
             });
+    }
+
+    void removeExistingShardFollowTasks(
+            ResumeFollowAction.Request request,
+            String clusterNameAlias,
+            IndexMetaData leaderIndexMetadata,
+            IndexMetaData followIndexMetadata,
+            String[] leaderIndexHistoryUUIDs,
+            ActionListener<AcknowledgedResponse> listener,
+            ClusterState localState) throws IOException {
+
+        PersistentTasksCustomMetaData persistentTasksMetaData = localState.metaData().custom(PersistentTasksCustomMetaData.TYPE);
+        if (persistentTasksMetaData == null) {
+            startShardFollowTasks(request, clusterNameAlias, leaderIndexMetadata, followIndexMetadata, leaderIndexHistoryUUIDs, listener);
+            return;
+        }
+
+        List<String> shardFollowTaskIds = persistentTasksMetaData.tasks().stream()
+            .filter(persistentTask -> ShardFollowTask.NAME.equals(persistentTask.getTaskName()))
+            .filter(persistentTask -> {
+                ShardFollowTask shardFollowTask = (ShardFollowTask) persistentTask.getParams();
+                return shardFollowTask.getFollowShardId().getIndexName().equals(followIndexMetadata.getIndex().getName());
+            })
+            .map(PersistentTasksCustomMetaData.PersistentTask::getId)
+            .collect(Collectors.toList());
+
+        if (shardFollowTaskIds.isEmpty()) {
+            startShardFollowTasks(request, clusterNameAlias, leaderIndexMetadata, followIndexMetadata, leaderIndexHistoryUUIDs, listener);
+            return;
+        }
+
+        int i = 0;
+        final ResponseHandler responseHandler = new ResponseHandler(shardFollowTaskIds.size(), ActionListener.wrap(
+            response -> startShardFollowTasks(request, clusterNameAlias, leaderIndexMetadata, followIndexMetadata,
+                leaderIndexHistoryUUIDs, listener),
+            listener::onFailure));
+        for (String taskId : shardFollowTaskIds) {
+            final int taskSlot = i++;
+            persistentTasksService.sendRemoveRequest(taskId, responseHandler.getActionListener(taskSlot));
+        }
     }
 
     /**
@@ -159,7 +202,7 @@ public class TransportResumeFollowAction extends TransportMasterNodeAction<Resum
      *     <li>The leader index and follow index need to have the same number of primary shards</li>
      * </ul>
      */
-    void start(
+    void startShardFollowTasks(
             ResumeFollowAction.Request request,
             String clusterNameAlias,
             IndexMetaData leaderIndexMetadata,

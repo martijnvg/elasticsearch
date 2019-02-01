@@ -6,6 +6,7 @@
 package org.elasticsearch.upgrades;
 
 import org.elasticsearch.client.Request;
+import org.elasticsearch.client.ResponseException;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.settings.Settings;
@@ -15,6 +16,7 @@ import java.io.IOException;
 import java.util.Map;
 
 import static org.elasticsearch.rest.action.search.RestSearchAction.TOTAL_HITS_AS_INT_PARAM;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 
 public class CcrRollingUpgradeIT extends AbstractMultiClusterUpgradeTestCase {
@@ -69,8 +71,12 @@ public class CcrRollingUpgradeIT extends AbstractMultiClusterUpgradeTestCase {
                     // At this point the leader cluster has not been upgraded, but follower cluster has been upgrade.
                     // Create a leader index in the follow cluster and try to follow it in the leader cluster.
                     // This should fail, because the leader cluster at this point in time can't do file based recovery from follower.
-//                    createLeaderIndex("leader_index4");
-//                    index(followerClient, "leader_index4", 64);
+                    createLeaderIndex(followerClient(), "leader_index4");
+                    index(followerClient(), "leader_index4", 64);
+                    ResponseException e = expectThrows(ResponseException.class,
+                        () -> followIndex(leaderClient(), "follower", "leader_index4", "follower_index4"));
+                    assertThat(e.getMessage(), containsString("the snapshot was created with Elasticsearch version ["));
+                    assertThat(e.getMessage(), containsString("] which is higher than the version of this node ["));
                     break;
                 default:
                     throw new AssertionError("unexpected upgrade_state [" + upgradeState + "]");

@@ -7,6 +7,7 @@ package org.elasticsearch.upgrades;
 
 import org.elasticsearch.client.Request;
 import org.elasticsearch.client.RestClient;
+import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.support.XContentMapValues;
 
@@ -23,9 +24,9 @@ public class CcrRollingUpgradeIT extends AbstractMultiClusterUpgradeTestCase {
 
         if (clusterName == ClusterName.LEADER) {
             if (upgradeState == UpgradeState.NONE) {
-                createLeaderIndex("leader_index1");
+                createLeaderIndex(leaderClient(), "leader_index1");
                 index(leaderClient(), "leader_index1", 64);
-                createLeaderIndex("leader_index2");
+                createLeaderIndex(leaderClient(), "leader_index2");
                 index(leaderClient(), "leader_index2", 64);
             } else {
                 throw new AssertionError("unexpected upgrade_state [" + upgradeState + "]");
@@ -39,19 +40,37 @@ public class CcrRollingUpgradeIT extends AbstractMultiClusterUpgradeTestCase {
                 case ONE_THIRD:
                     index(leaderClient(), "leader_index1", 64);
                     assertBusy(() -> verifyTotalHitCount("follower_index1", 128, followerClient()));
+
+                    followIndex(followerClient(), "leader", "leader_index2", "follower_index2");
+                    assertBusy(() -> verifyTotalHitCount("follower_index2", 64, followerClient()));
                     break;
                 case TWO_THIRD:
                     index(leaderClient(), "leader_index1", 64);
                     assertBusy(() -> verifyTotalHitCount("follower_index1", 192, followerClient()));
+
+                    index(leaderClient(), "leader_index2", 64);
+                    assertBusy(() -> verifyTotalHitCount("follower_index2", 128, followerClient()));
+
+                    createLeaderIndex(leaderClient(), "leader_index3");
+                    index(leaderClient(), "leader_index3", 64);
+                    followIndex(followerClient(), "leader", "leader_index3", "follower_index3");
+                    assertBusy(() -> verifyTotalHitCount("follower_index3", 64, followerClient()));
                     break;
                 case ALL:
                     index(leaderClient(), "leader_index1", 64);
                     assertBusy(() -> verifyTotalHitCount("follower_index1", 256, followerClient()));
+
+                    index(leaderClient(), "leader_index2", 64);
+                    assertBusy(() -> verifyTotalHitCount("follower_index2", 192, followerClient()));
+
+                    index(leaderClient(), "leader_index3", 64);
+                    assertBusy(() -> verifyTotalHitCount("follower_index3", 128, followerClient()));
+
                     // At this point the leader cluster has not been upgraded, but follower cluster has been upgrade.
                     // Create a leader index in the follow cluster and try to follow it in the leader cluster.
                     // This should fail, because the leader cluster at this point in time can't do file based recovery from follower.
-//                    createLeaderIndex("leader_index3");
-//                    index(followerClient, "leader_index3", 64);
+//                    createLeaderIndex("leader_index4");
+//                    index(followerClient, "leader_index4", 64);
                     break;
                 default:
                     throw new AssertionError("unexpected upgrade_state [" + upgradeState + "]");
@@ -61,13 +80,19 @@ public class CcrRollingUpgradeIT extends AbstractMultiClusterUpgradeTestCase {
         }
     }
 
-    private static void createLeaderIndex(String indexName) throws IOException {
+    private static void createLeaderIndex(RestClient client, String indexName) throws IOException {
         Settings indexSettings = Settings.builder()
             .put("index.soft_deletes.enabled", true)
             .put("index.number_of_shards", 1)
             .put("index.number_of_replicas", 0)
             .build();
-        createIndex(indexName, indexSettings);
+        createIndex(client, indexName, indexSettings);
+    }
+
+    private static void createIndex(RestClient client, String name, Settings settings) throws IOException {
+        Request request = new Request("PUT", "/" + name);
+        request.setJsonEntity("{\n \"settings\": " + Strings.toString(settings) + "}");
+        client.performRequest(request);
     }
 
     private static void followIndex(RestClient client, String leaderCluster, String leaderIndex, String followIndex) throws IOException {

@@ -100,10 +100,8 @@ def createTestCluster(Version version, String clusterNameBase, Task dependsOnTes
 Task upgradeTestCluster(Version version, String clusterNameBase, Task followerClusterTest, Task followerClusterTestRunner,
                         Task leaderClusterTest, Task leaderClusterTestRunner) {
 
-    String versionPrefix = "v${version}"
-    String taskPrefix = "${versionPrefix}#${clusterNameBase}"
-    Closure configureUpgradeCluster = {String name, Task lastRunner, int stopNode, Closure getOtherUnicastHostAddresses ->
-        configure(extensions.findByName("${versionPrefix}#${name}")) {
+    Closure configureUpgradeCluster = {String taskPrefix, String name, Task lastRunner, int stopNode, Closure getOtherUnicastHostAddresses ->
+        configure(extensions.findByName("${taskPrefix}#${name}")) {
             dependsOn lastRunner, "${taskPrefix}#clusterTestCluster#node${stopNode}.stop"
             clusterName = "${clusterNameBase}"
             otherUnicastHostAddresses = { getOtherUnicastHostAddresses() }
@@ -123,9 +121,11 @@ Task upgradeTestCluster(Version version, String clusterNameBase, Task followerCl
         }
     }
 
+    String versionPrefix = "v${version}"
+    String taskPrefix = "${versionPrefix}#${clusterNameBase}"
     Task oneThirdUpgradedTest = tasks.create(name: "${taskPrefix}#oneThirdUpgradedTest", type: RestIntegTestTask)
 
-    configureUpgradeCluster("${clusterNameBase}#oneThirdUpgradedTestCluster", followerClusterTestRunner, 0,
+    configureUpgradeCluster(taskPrefix, "oneThirdUpgradedTestCluster", followerClusterTestRunner, 0,
             // Use all running nodes as seed nodes so there is no race between pinging and the tests
             { [followerClusterTest.nodes.get(1).transportUri(), followerClusterTest.nodes.get(2).transportUri()] })
 
@@ -145,7 +145,7 @@ Task upgradeTestCluster(Version version, String clusterNameBase, Task followerCl
 
     Task twoThirdsUpgradedTest = tasks.create(name: "${taskPrefix}#twoThirdsUpgradedTest", type: RestIntegTestTask)
 
-    configureUpgradeCluster("${clusterNameBase}#twoThirdsUpgradedTestCluster", oneThirdUpgradedTestRunner, 1,
+    configureUpgradeCluster(taskPrefix, "twoThirdsUpgradedTestCluster", oneThirdUpgradedTestRunner, 1,
             // Use all running nodes as seed nodes so there is no race between pinging and the tests
             { [followerClusterTest.nodes.get(2).transportUri(), oneThirdUpgradedTest.nodes.get(0).transportUri()] })
 
@@ -165,7 +165,7 @@ Task upgradeTestCluster(Version version, String clusterNameBase, Task followerCl
 
     Task upgradedClusterTest = tasks.create(name: "${taskPrefix}#upgradedClusterTest", type: RestIntegTestTask)
 
-    configureUpgradeCluster("${clusterNameBase}#upgradedClusterTestCluster", twoThirdsUpgradedTestRunner, 2,
+    configureUpgradeCluster(taskPrefix, "upgradedClusterTestCluster", twoThirdsUpgradedTestRunner, 2,
             // Use all running nodes as seed nodes so there is no race between pinging and the tests
             { [oneThirdUpgradedTest.nodes.get(0).transportUri(), twoThirdsUpgradedTest.nodes.get(0).transportUri()] })
 

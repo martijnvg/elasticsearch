@@ -23,23 +23,177 @@ for (Version version : bwcVersions.wireCompatible) {
         continue
     }
 
-    def (leaderClusterTest, leaderClusterTestRunner) = createTestCluster(version, "leader", null, null)
-    def (followerClusterTest, followerClusterTestRunner) = createTestCluster(version, "follower", leaderClusterTestRunner, 
-            leaderClusterTest)
+    String taskPrefix = "v${version}"
+
+    // ============================================================================================
+    // Create leader cluster
+    // ============================================================================================
+
+    RestIntegTestTask leaderClusterTest = tasks.create(name: "${taskPrefix}#leader#clusterTest", type: RestIntegTestTask) {
+        mustRunAfter(precommit)
+    }
+
+    configure(extensions.findByName("${taskPrefix}#leader#clusterTestCluster")) {
+        bwcVersion = version
+        numBwcNodes = 3
+        numNodes = 3
+        clusterName = 'leader'
+        setting 'xpack.security.enabled', 'false'
+        setting 'xpack.monitoring.enabled', 'false'
+        setting 'xpack.ml.enabled', 'false'
+        setting 'xpack.watcher.enabled', 'false'
+        setting 'xpack.license.self_generated.type', 'trial'
+    }
+
+    Task leaderClusterTestRunner = tasks.getByName("${taskPrefix}#leader#clusterTestRunner")
+    leaderClusterTestRunner.configure {
+        systemProperty 'tests.rest.upgrade_state', 'none'
+        systemProperty 'tests.rest.cluster_name', 'leader'
+    }
+
+    // ============================================================================================
+    // Create leader cluster
+    // ============================================================================================
+
+    RestIntegTestTask followerClusterTest = tasks.create(name: "${taskPrefix}#follower#clusterTest", type: RestIntegTestTask) {
+        mustRunAfter(precommit)
+    }
+
+    configure(extensions.findByName("${taskPrefix}#follower#clusterTestCluster")) {
+        dependsOn leaderClusterTestRunner
+        bwcVersion = version
+        numBwcNodes = 3
+        numNodes = 3
+        clusterName = 'follower'
+        setting 'xpack.security.enabled', 'false'
+        setting 'xpack.monitoring.enabled', 'false'
+        setting 'xpack.ml.enabled', 'false'
+        setting 'xpack.watcher.enabled', 'false'
+        setting 'xpack.license.self_generated.type', 'trial'
+    }
+
+    Task followerClusterTestRunner = tasks.getByName("${taskPrefix}#follower#clusterTestRunner")
+    followerClusterTestRunner.configure {
+        systemProperty 'tests.rest.upgrade_state', 'none'
+        systemProperty 'tests.rest.cluster_name', 'follower'
+
+        systemProperty 'tests.leader_host', "${-> leaderClusterTest.nodes.get(0).httpUri()}"
+        systemProperty 'tests.leader_remote_cluster_seed', "${-> leaderClusterTest.nodes.get(0).transportUri()}"
+
+        systemProperty 'tests.follower_host', "${-> followerClusterTest.nodes.get(0).httpUri()}"
+        systemProperty 'tests.follower_remote_cluster_seed', "${-> followerClusterTest.nodes.get(0).transportUri()}"
+    }
+
     followerClusterTestRunner.configure {
 //        finalizedBy "v${version}#leader#clusterTestCluster#node0.stop"
 //        finalizedBy "v${version}#leader#clusterTestCluster#node1.stop"
 //        finalizedBy "v${version}#leader#clusterTestCluster#node2.stop"
     }
 
-    // First upgrade the follower cluster:
-    Task followerVersionBwcTest = upgradeTestCluster(version, "follower", followerClusterTest, followerClusterTestRunner,
-            leaderClusterTest, leaderClusterTestRunner)
-    // Then upgrade the leader cluster:
-//    Task leaderVersionBwcTest = upgradeTestCluster(version, "leader", oldLeaderClusterTest, followerVersionBwcTest)
+    // ============================================================================================
+    // Upgrade follower cluster
+    // ============================================================================================
+
+    Closure configureUpgradeCluster = {String prefix, String cluster, String name, Task lastRunner, int stopNode, Closure getOtherUnicastHostAddresses ->
+        configure(extensions.findByName("${prefix}#${cluster}#${name}")) {
+            dependsOn lastRunner, "${prefix}#${cluster}#clusterTestCluster#node${stopNode}.stop"
+            clusterName = cluster
+            otherUnicastHostAddresses = { getOtherUnicastHostAddresses() }
+            minimumMasterNodes = { 2 }
+            autoSetInitialMasterNodes = false
+            /* Override the data directory so the new node always gets the node we
+            * just stopped's data directory. */
+            dataDir = { nodeNumber -> followerClusterTest.nodes[stopNode].dataDir }
+            setting 'repositories.url.allowed_urls', 'http://snapshot.test*'
+            setting 'xpack.security.enabled', 'false'
+            setting 'xpack.monitoring.enabled', 'false'
+            setting 'xpack.ml.enabled', 'false'
+            setting 'xpack.watcher.enabled', 'false'
+            setting 'xpack.license.self_generated.type', 'trial'
+            setting 'node.name', "upgraded-node-${stopNode}"
+            setting 'node.attr.upgraded', 'true'
+        }
+    }
+
+    Task followerOneThirdUpgradedTest = tasks.create(name: "${taskPrefix}#follower#oneThirdUpgradedTest", type: RestIntegTestTask)
+
+    configureUpgradeCluster(taskPrefix, 'follower', 'oneThirdUpgradedTestCluster', followerClusterTestRunner, 0,
+            // Use all running nodes as seed nodes so there is no race between pinging and the tests
+            { [followerClusterTest.nodes.get(1).transportUri(), followerClusterTest.nodes.get(2).transportUri()] })
+
+    Task followerOneThirdUpgradedTestRunner = tasks.getByName("${taskPrefix}#follower#oneThirdUpgradedTestRunner")
+    followerOneThirdUpgradedTestRunner.configure {
+        systemProperty 'tests.rest.upgrade_state', 'one_third'
+        systemProperty 'tests.rest.cluster_name', 'follower'
+
+        systemProperty 'tests.follower_host', "${-> followerClusterTest.nodes.get(1).httpUri()}"
+        systemProperty 'tests.follower_remote_cluster_seed', "${-> followerClusterTest.nodes.get(1).transportUri()}"
+
+        systemProperty 'tests.leader_host', "${-> leaderClusterTest.nodes.get(0).httpUri()}"
+        systemProperty 'tests.leader_remote_cluster_seed', "${-> leaderClusterTest.nodes.get(0).transportUri()}"
+
+        finalizedBy "${taskPrefix}#follower#clusterTestCluster#node1.stop"
+    }
+
+    Task followerTwoThirdsUpgradedTest = tasks.create(name: "${taskPrefix}#follower#twoThirdsUpgradedTest", type: RestIntegTestTask)
+
+    configureUpgradeCluster(taskPrefix, 'follower', 'twoThirdsUpgradedTestCluster', followerOneThirdUpgradedTestRunner, 1,
+            // Use all running nodes as seed nodes so there is no race between pinging and the tests
+            { [followerClusterTest.nodes.get(2).transportUri(), followerOneThirdUpgradedTest.nodes.get(0).transportUri()] })
+
+    Task followerTwoThirdsUpgradedTestRunner = tasks.getByName("${taskPrefix}#follower#twoThirdsUpgradedTestRunner")
+    followerTwoThirdsUpgradedTestRunner.configure {
+        systemProperty 'tests.rest.upgrade_state', 'two_third'
+        systemProperty 'tests.rest.cluster_name', 'follower'
+
+        systemProperty 'tests.follower_host', "${-> followerClusterTest.nodes.get(2).httpUri()}"
+        systemProperty 'tests.follower_remote_cluster_seed', "${-> followerClusterTest.nodes.get(2).transportUri()}"
+
+        systemProperty 'tests.leader_host', "${-> leaderClusterTest.nodes.get(0).httpUri()}"
+        systemProperty 'tests.leader_remote_cluster_seed', "${-> leaderClusterTest.nodes.get(0).transportUri()}"
+
+        finalizedBy "${taskPrefix}#follower#clusterTestCluster#node2.stop"
+    }
+
+    Task followerUpgradedClusterTest = tasks.create(name: "${taskPrefix}#follower#upgradedClusterTest", type: RestIntegTestTask)
+
+    configureUpgradeCluster(taskPrefix, 'follower', 'upgradedClusterTestCluster', followerTwoThirdsUpgradedTestRunner, 2,
+            // Use all running nodes as seed nodes so there is no race between pinging and the tests
+            { [followerOneThirdUpgradedTest.nodes.get(0).transportUri(), followerTwoThirdsUpgradedTest.nodes.get(0).transportUri()] })
+
+    Task followerUpgradedClusterTestRunner = tasks.getByName("${taskPrefix}#follower#upgradedClusterTestRunner")
+    followerUpgradedClusterTestRunner.configure {
+        systemProperty 'tests.rest.upgrade_state', 'all'
+        systemProperty 'tests.rest.cluster_name', 'follower'
+
+        systemProperty 'tests.follower_host', "${-> followerOneThirdUpgradedTest.nodes.get(0).httpUri()}"
+        systemProperty 'tests.follower_remote_cluster_seed', "${-> followerOneThirdUpgradedTest.nodes.get(0).transportUri()}"
+
+        systemProperty 'tests.leader_host', "${-> leaderClusterTest.nodes.get(0).httpUri()}"
+        systemProperty 'tests.leader_remote_cluster_seed', "${-> leaderClusterTest.nodes.get(0).transportUri()}"
+
+        /*
+         * Force stopping all the upgraded nodes after the test runner
+         * so they are alive during the test.
+         */
+        finalizedBy "${taskPrefix}#follower#oneThirdUpgradedTestCluster#stop"
+        finalizedBy "${taskPrefix}#follower#twoThirdsUpgradedTestCluster#stop"
+
+        finalizedBy "v${version}#leader#clusterTestCluster#node0.stop"
+        finalizedBy "v${version}#leader#clusterTestCluster#node1.stop"
+        finalizedBy "v${version}#leader#clusterTestCluster#node2.stop"
+    }
+
+    // ============================================================================================
+    // Upgrade leader cluster
+    // ============================================================================================
+
+
     if (project.bwc_tests_enabled) {
-//        bwcTest.dependsOn(leaderVersionBwcTest)
-        bwcTest.dependsOn(followerVersionBwcTest)
+        Task versionBwcTest = tasks.create(name: "${taskPrefix}#bwcTest") {
+            dependsOn = [followerUpgradedClusterTest]
+        }
+        bwcTest.dependsOn(versionBwcTest)
     }
 }
 
@@ -50,8 +204,7 @@ task integTest {
     if (project.bwc_tests_enabled) {
         for (final def version : bwcVersions.unreleasedWireCompatible) {
 //            dependsOn "v${version}#leader#bwcTest"
-            dependsOn "v${version}#follower#bwcTest"
-//            dependsOn "v${version}#follower#clusterTest"
+            dependsOn "v${version}#bwcTest"
         }
     }
 }
@@ -77,9 +230,6 @@ def createTestCluster(Version version, String clusterNameBase, Task dependsOnTes
         setting 'xpack.watcher.enabled', 'false'
         setting 'xpack.license.self_generated.type', 'trial'
         setting 'node.attr.upgraded', 'false'
-//        if (otherClusterTest != null) {
-//            setting 'cluster.remote.leader_cluster.seeds', "\"${-> otherClusterTest.nodes.get(0).transportUri()}\""
-//        }
     }
 
     Task clusterTestRunner = tasks.getByName("${taskPrefix}#clusterTestRunner")

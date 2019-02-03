@@ -165,6 +165,8 @@ for (Version version : bwcVersions.wireCompatible) {
         systemProperty 'tests.leader_host', "${-> leaderClusterTest.nodes.get(0).httpUri()}"
         systemProperty 'tests.leader_remote_cluster_seed', "${-> leaderClusterTest.nodes.get(0).transportUri()}"
 
+        // This is needed, otherwise leader node 0 will stop after the leaderClusterTestRunner task has run.
+        // Here it is ok to stop, because in the next task, the leader node 0 gets upgraded.
         finalizedBy "v${version}#leader#clusterTestCluster#node0.stop"
     }
 

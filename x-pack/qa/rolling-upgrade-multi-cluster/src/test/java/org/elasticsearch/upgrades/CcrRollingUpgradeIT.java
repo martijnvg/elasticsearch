@@ -33,8 +33,14 @@ public class CcrRollingUpgradeIT extends AbstractMultiClusterUpgradeTestCase {
                     index(leaderClient(), "leader_index2", 64);
                     break;
                 case ONE_THIRD:
+                    break;
                 case TWO_THIRD:
+                    break;
                 case ALL:
+                    // At this point all nodes in both clusters have been updated and
+                    // the leader cluster can now will leader_index4 in the follower cluster:
+                    followIndex(leaderClient(), "follower", "leader_index4", "follower_index4");
+                    assertBusy(() -> verifyTotalHitCount("follower_index4", 64, leaderClient()));
                     break;
                 default:
                     throw new AssertionError("unexpected upgrade_state [" + upgradeState + "]");

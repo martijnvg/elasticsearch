@@ -25,13 +25,19 @@ public class CcrRollingUpgradeIT extends AbstractMultiClusterUpgradeTestCase {
         logger.info("clusterName={}, upgradeState={}", clusterName, upgradeState);
 
         if (clusterName == ClusterName.LEADER) {
-            if (upgradeState == UpgradeState.NONE) {
-                createLeaderIndex(leaderClient(), "leader_index1");
-                index(leaderClient(), "leader_index1", 64);
-                createLeaderIndex(leaderClient(), "leader_index2");
-                index(leaderClient(), "leader_index2", 64);
-            } else {
-                throw new AssertionError("unexpected upgrade_state [" + upgradeState + "]");
+            switch (upgradeState) {
+                case NONE:
+                    createLeaderIndex(leaderClient(), "leader_index1");
+                    index(leaderClient(), "leader_index1", 64);
+                    createLeaderIndex(leaderClient(), "leader_index2");
+                    index(leaderClient(), "leader_index2", 64);
+                    break;
+                case ONE_THIRD:
+                case TWO_THIRD:
+                case ALL:
+                    break;
+                default:
+                    throw new AssertionError("unexpected upgrade_state [" + upgradeState + "]");
             }
         } else if (clusterName == ClusterName.FOLLOWER) {
             switch (upgradeState) {

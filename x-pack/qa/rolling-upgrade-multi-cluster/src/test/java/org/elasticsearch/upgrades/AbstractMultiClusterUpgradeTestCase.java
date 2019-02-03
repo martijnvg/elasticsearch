@@ -76,12 +76,6 @@ public abstract class AbstractMultiClusterUpgradeTestCase extends ESRestTestCase
         String leaderRemoteClusterSeed = System.getProperty("tests.leader_remote_cluster_seed");
         if (leaderRemoteClusterSeed != null) {
             try  (RestClient client = buildFollowerClient()){
-//                Request request = new Request("GET", "/_nodes");
-//                Map<?, ?> nodesResponse = (Map<?, ?>) toMap(client().performRequest(request)).get("nodes");
-//                 Select node info of first node (we don't know the node id):
-//                nodesResponse = (Map<?, ?>) nodesResponse.get(nodesResponse.keySet().iterator().next());
-//                String transportAddress = (String) nodesResponse.get("transport_address");
-
                 logger.info("Configuring leader remote cluster [{}]", leaderRemoteClusterSeed);
                 Request request = new Request("PUT", "/_cluster/settings");
                 request.setJsonEntity("{\"persistent\": {\"cluster.remote.leader.seeds\": \"" + leaderRemoteClusterSeed + "\"}}");

@@ -26,6 +26,7 @@ import org.elasticsearch.script.ScriptService;
 import org.elasticsearch.threadpool.Scheduler;
 
 import java.util.Map;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.LongSupplier;
 
@@ -36,6 +37,15 @@ import java.util.function.LongSupplier;
  * Processors may get called concurrently and thus need to be thread-safe.
  */
 public interface Processor {
+
+    default void execute(IngestDocument ingestDocument, BiConsumer<IngestDocument, Exception> handler) {
+        try {
+            IngestDocument result = execute(ingestDocument);
+            handler.accept(result, null);
+        } catch (Exception e) {
+            handler.accept(null, e);
+        }
+    }
 
     /**
      * Introspect and potentially modify the incoming data.

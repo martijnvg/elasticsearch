@@ -539,7 +539,7 @@ public class IngestServiceTests extends ESTestCase {
 
     public void testExecuteBulkPipelineDoesNotExist() {
         IngestService ingestService = createWithProcessors(Collections.singletonMap(
-            "mock", (factories, tag, config) -> mock(CompoundProcessor.class)));
+            "mock", (factories, tag, config) -> mockCompoundProcessor()));
 
         PutPipelineRequest putRequest = new PutPipelineRequest("_id",
             new BytesArray("{\"processors\": [{\"mock\" : {}}]}"), XContentType.JSON);
@@ -580,7 +580,7 @@ public class IngestServiceTests extends ESTestCase {
 
     public void testExecuteSuccess() {
         IngestService ingestService = createWithProcessors(Collections.singletonMap(
-            "mock", (factories, tag, config) -> mock(CompoundProcessor.class)));
+            "mock", (factories, tag, config) -> mockCompoundProcessor()));
         PutPipelineRequest putRequest = new PutPipelineRequest("_id",
             new BytesArray("{\"processors\": [{\"mock\" : {}}]}"), XContentType.JSON);
         ClusterState clusterState = ClusterState.builder(new ClusterName("_name")).build(); // Start empty
@@ -616,7 +616,7 @@ public class IngestServiceTests extends ESTestCase {
     }
 
     public void testExecutePropagateAllMetaDataUpdates() throws Exception {
-        final CompoundProcessor processor = mock(CompoundProcessor.class);
+        final CompoundProcessor processor = mockCompoundProcessor();
         IngestService ingestService = createWithProcessors(Collections.singletonMap(
             "mock", (factories, tag, config) -> processor));
         PutPipelineRequest putRequest = new PutPipelineRequest("_id",
@@ -658,7 +658,7 @@ public class IngestServiceTests extends ESTestCase {
     }
 
     public void testExecuteFailure() throws Exception {
-        final CompoundProcessor processor = mock(CompoundProcessor.class);
+        final CompoundProcessor processor = mockCompoundProcessor();
         IngestService ingestService = createWithProcessors(Collections.singletonMap(
             "mock", (factories, tag, config) -> processor));
         PutPipelineRequest putRequest = new PutPipelineRequest("_id",
@@ -771,7 +771,12 @@ public class IngestServiceTests extends ESTestCase {
         CompoundProcessor processor = mock(CompoundProcessor.class);
         when(processor.getProcessors()).thenReturn(Collections.singletonList(mock(Processor.class)));
         Exception error = new RuntimeException();
-        doThrow(error).when(processor).execute(any());
+        doAnswer(args -> {
+            @SuppressWarnings("unchecked")
+            BiConsumer<IngestDocument, Exception> handler = (BiConsumer) args.getArguments()[1];
+            handler.accept(null, error);
+            return null;
+        }).when(processor).execute(any(), any());
         IngestService ingestService = createWithProcessors(Collections.singletonMap(
             "mock", (factories, tag, config) -> processor));
         PutPipelineRequest putRequest = new PutPipelineRequest("_id",
@@ -1064,6 +1069,17 @@ public class IngestServiceTests extends ESTestCase {
                 return processors;
             }
         }));
+    }
+
+    private CompoundProcessor mockCompoundProcessor() {
+        CompoundProcessor processor = mock(CompoundProcessor.class);
+        doAnswer(args -> {
+            @SuppressWarnings("unchecked")
+            BiConsumer<IngestDocument, Exception> handler = (BiConsumer) args.getArguments()[1];
+            handler.accept((IngestDocument) args.getArguments()[0], null);
+            return null;
+        }).when(processor).execute(any(), any());
+        return processor;
     }
 
     private class IngestDocumentMatcher extends ArgumentMatcher<IngestDocument> {

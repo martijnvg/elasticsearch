@@ -28,6 +28,7 @@ import org.elasticsearch.threadpool.ThreadPool;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 import static org.elasticsearch.ingest.TrackingResultProcessor.decorate;
 
@@ -48,14 +49,20 @@ class SimulateExecutionService {
             try {
                 Pipeline verbosePipeline = new Pipeline(pipeline.getId(), pipeline.getDescription(), pipeline.getVersion(),
                     verbosePipelineProcessor);
-                ingestDocument.executePipeline(verbosePipeline);
+                // TODO: make async
+                CountDownLatch latch = new CountDownLatch(1);
+                ingestDocument.executePipeline(verbosePipeline, (result, e) -> latch.countDown());
+                latch.await();
                 return new SimulateDocumentVerboseResult(processorResultList);
             } catch (Exception e) {
                 return new SimulateDocumentVerboseResult(processorResultList);
             }
         } else {
             try {
-                pipeline.execute(ingestDocument);
+                // TODO: make async
+                CountDownLatch latch = new CountDownLatch(1);
+                pipeline.execute(ingestDocument, (result, e) -> latch.countDown());
+                latch.await();
                 return new SimulateDocumentBaseResult(ingestDocument);
             } catch (Exception e) {
                 return new SimulateDocumentBaseResult(e);

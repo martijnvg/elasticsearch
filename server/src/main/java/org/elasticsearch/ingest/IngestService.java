@@ -26,15 +26,21 @@ import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.ResourceNotFoundException;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.DocWriteRequest;
+import org.elasticsearch.action.OriginalIndices;
 import org.elasticsearch.action.bulk.TransportBulkAction;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.ingest.DeletePipelineRequest;
 import org.elasticsearch.action.ingest.PutPipelineRequest;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.search.SearchResponseSections;
+import org.elasticsearch.action.search.SearchTask;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.action.support.master.AcknowledgedResponse;
 import org.elasticsearch.cluster.AckedClusterStateUpdateTask;
 import org.elasticsearch.cluster.ClusterChangedEvent;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.ClusterStateApplier;
+import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
 import org.elasticsearch.cluster.metadata.MetaData;
 import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.cluster.service.ClusterService;
@@ -45,10 +51,21 @@ import org.elasticsearch.common.util.concurrent.AbstractRunnable;
 import org.elasticsearch.common.xcontent.XContentHelper;
 import org.elasticsearch.env.Environment;
 import org.elasticsearch.gateway.GatewayService;
+import org.elasticsearch.index.Index;
+import org.elasticsearch.index.IndexService;
 import org.elasticsearch.index.VersionType;
 import org.elasticsearch.index.analysis.AnalysisRegistry;
+import org.elasticsearch.index.mapper.MappedFieldType;
+import org.elasticsearch.index.query.QueryShardContext;
+import org.elasticsearch.index.shard.IndexShard;
+import org.elasticsearch.index.shard.ShardId;
+import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.plugins.IngestPlugin;
 import org.elasticsearch.script.ScriptService;
+import org.elasticsearch.search.SearchService;
+import org.elasticsearch.search.fetch.QueryFetchSearchResult;
+import org.elasticsearch.search.internal.AliasFilter;
+import org.elasticsearch.search.internal.ShardSearchTransportRequest;
 import org.elasticsearch.threadpool.ThreadPool;
 
 import java.util.ArrayList;
@@ -84,11 +101,18 @@ public class IngestService implements ClusterStateApplier {
     private final ThreadPool threadPool;
     private final IngestMetric totalMetrics = new IngestMetric();
 
+    public SearchService searchService;
+
+    public IndicesService indicesService;
+
     public IngestService(ClusterService clusterService, ThreadPool threadPool,
                          Environment env, ScriptService scriptService, AnalysisRegistry analysisRegistry,
                          List<IngestPlugin> ingestPlugins) {
         this.clusterService = clusterService;
         this.scriptService = scriptService;
+
+        final IndexNameExpressionResolver resolver = new IndexNameExpressionResolver();
+
         this.processorFactories = processorFactories(
             ingestPlugins,
             new Processor.Parameters(
@@ -96,8 +120,54 @@ public class IngestService implements ClusterStateApplier {
                 threadPool.getThreadContext(), threadPool::relativeTimeInMillis,
                 (delay, command) -> threadPool.schedule(
                     command, TimeValue.timeValueMillis(delay), ThreadPool.Names.GENERIC
-                ), this
-            )
+                ), this,
+                searchRequest -> {
+                    Index[] indices = resolver.concreteIndices(clusterService.state(), searchRequest);
+                    assert indices.length == 1;
+                    ShardSearchTransportRequest request = new ShardSearchTransportRequest(
+                        new OriginalIndices(searchRequest.indices(), IndicesOptions.STRICT_EXPAND_OPEN),
+                        searchRequest,
+                        new ShardId(indices[0], 0),
+                        1,
+                        AliasFilter.EMPTY,
+                        0f,
+                        threadPool.absoluteTimeInMillis(),
+                        null,
+                        null
+                    );
+
+                    try {
+                        SearchTask searchTask = new SearchTask(1, "", "", "", null, Collections.emptyMap());
+                        QueryFetchSearchResult result = (QueryFetchSearchResult) searchService.executeQueryPhase(request, searchTask);
+                        SearchResponseSections sections = new SearchResponseSections(result.fetchResult().hits(),
+                            null, null, false, false, null, 0);
+                        return new SearchResponse(sections, null, 1, 1, 0, 0L, null, null);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                },
+                aliasOrIndex -> {
+                    Index[] indices =
+                        resolver.concreteIndices(clusterService.state(), IndicesOptions.STRICT_EXPAND_OPEN, aliasOrIndex);
+                    assert indices.length == 1;
+
+                    IndexService indexService = indicesService.indexServiceSafe(indices[0]);
+                    assert indexService.numberOfShards() == 1;
+                    IndexShard indexShard = indexService.getShard(0);
+                    return indexShard.acquireSearcher("ingest");
+                },
+                (aliasOrIndex, fieldName) -> {
+                    Index[] indices =
+                        resolver.concreteIndices(clusterService.state(), IndicesOptions.STRICT_EXPAND_OPEN, aliasOrIndex);
+                    assert indices.length == 1;
+
+                    IndexService indexService = indicesService.indexServiceSafe(indices[0]);
+                    assert indexService.numberOfShards() == 1;
+                    MappedFieldType fieldType = indexService.mapperService().fullName(fieldName);
+                    QueryShardContext queryShardContext =
+                        indexService.newQueryShardContext(0, null, () -> threadPool.absoluteTimeInMillis(), null);
+                    return queryShardContext.getForField(fieldType);
+                })
         );
         this.threadPool = threadPool;
     }

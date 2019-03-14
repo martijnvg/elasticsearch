@@ -421,6 +421,7 @@ public class Node implements Closeable {
                             clusterModule.getIndexNameExpressionResolver(), indicesModule.getMapperRegistry(), namedWriteableRegistry,
                             threadPool, settingsModule.getIndexScopedSettings(), circuitBreakerService, bigArrays,
                             scriptModule.getScriptService(), client, metaStateService, engineFactoryProviders, indexStoreFactories);
+            ingestService.indicesService = indicesService;
 
             final AliasValidator aliasValidator = new AliasValidator();
 
@@ -495,6 +496,7 @@ public class Node implements Closeable {
             final SearchService searchService = newSearchService(clusterService, indicesService,
                 threadPool, scriptModule.getScriptService(), bigArrays, searchModule.getFetchPhase(),
                 responseCollectorService);
+            ingestService.searchService = searchService;
 
             final List<PersistentTasksExecutor<?>> tasksExecutors = pluginsService
                 .filterPlugins(PersistentTaskPlugin.class).stream()

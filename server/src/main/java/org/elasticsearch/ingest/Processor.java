@@ -19,14 +19,19 @@
 
 package org.elasticsearch.ingest;
 
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.env.Environment;
 import org.elasticsearch.index.analysis.AnalysisRegistry;
+import org.elasticsearch.index.engine.Engine;
+import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.script.ScriptService;
 import org.elasticsearch.threadpool.Scheduler;
 
 import java.util.Map;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.LongSupplier;
 
 /**
@@ -107,9 +112,18 @@ public interface Processor {
          */
         public final BiFunction<Long, Runnable, Scheduler.ScheduledCancellable> scheduler;
 
-        public Parameters(Environment env, ScriptService scriptService, AnalysisRegistry analysisRegistry,  ThreadContext threadContext,
+        // needed for prototype 1:
+        public final Function<SearchRequest, SearchResponse> localSearcherProvider;
+
+        // Needed for prototype 2:
+        public final Function<String, Engine.Searcher> searcherProvider;
+        public final BiFunction<String, String, IndexFieldData<?>> fieldDateProvider;
+
+        public Parameters(Environment env, ScriptService scriptService, AnalysisRegistry analysisRegistry, ThreadContext threadContext,
                           LongSupplier relativeTimeSupplier, BiFunction<Long, Runnable, Scheduler.ScheduledCancellable> scheduler,
-            IngestService ingestService) {
+                          IngestService ingestService, Function<SearchRequest, SearchResponse> localSearcherProvider,
+                          Function<String, Engine.Searcher> searcherProvider,
+                          BiFunction<String, String, IndexFieldData<?>> fieldDateProvider) {
             this.env = env;
             this.scriptService = scriptService;
             this.threadContext = threadContext;
@@ -117,6 +131,9 @@ public interface Processor {
             this.relativeTimeSupplier = relativeTimeSupplier;
             this.scheduler = scheduler;
             this.ingestService = ingestService;
+            this.localSearcherProvider = localSearcherProvider;
+            this.searcherProvider = searcherProvider;
+            this.fieldDateProvider = fieldDateProvider;
         }
 
     }

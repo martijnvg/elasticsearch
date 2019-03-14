@@ -381,7 +381,7 @@ public class SearchService extends AbstractLifecycleComponent implements IndexEv
         });
     }
 
-    private SearchPhaseResult executeQueryPhase(ShardSearchRequest request, SearchTask task) throws Exception {
+    public SearchPhaseResult executeQueryPhase(ShardSearchRequest request, SearchTask task) throws Exception {
         final SearchContext context = createAndPutContext(request);
         context.incRef();
         try {

@@ -19,6 +19,7 @@ public class LookupPlugin extends Plugin implements IngestPlugin {
         Map<String, Processor.Factory> factories = new HashMap<>();
         factories.put(DecorateProcessor.TYPE, new DecorateProcessor.Factory(parameters.localSearcherProvider));
         factories.put(DecorateProcessor2.TYPE, new DecorateProcessor2.Factory(parameters.searcherProvider, parameters.fieldDateProvider));
+        factories.put(DecorateProcessor3.TYPE, new DecorateProcessor3.Factory(parameters.searcherProvider, parameters.fieldDateProvider));
         return factories;
     }
 

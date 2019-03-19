@@ -33,7 +33,7 @@ public final class DecorateProcessor extends AbstractProcessor {
     @Override
     public IngestDocument execute(IngestDocument ingestDocument) throws Exception {
         final String sourceField = "Domain";
-        final String targetField = "GlobalRank";
+        final String targetField = "lookup";
         final String indexName = "lookup";
         final String domainField = "Domain";
         final String[] extractFields = new String[] {"GlobalRank"};

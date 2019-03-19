@@ -20,7 +20,10 @@
 package org.elasticsearch.ingest;
 
 import org.elasticsearch.common.Strings;
+import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.index.VersionType;
+import org.elasticsearch.index.engine.Engine;
+import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.mapper.IdFieldMapper;
 import org.elasticsearch.index.mapper.IndexFieldMapper;
 import org.elasticsearch.index.mapper.RoutingFieldMapper;
@@ -29,6 +32,7 @@ import org.elasticsearch.index.mapper.TypeFieldMapper;
 import org.elasticsearch.index.mapper.VersionFieldMapper;
 import org.elasticsearch.script.TemplateScript;
 
+import java.io.IOException;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -43,11 +47,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Represents a single document being captured before indexing and holds the source and metadata (like id, type and index).
  */
-public final class IngestDocument {
+public final class IngestDocument implements AutoCloseable {
 
     public static final String INGEST_KEY = "_ingest";
     private static final String INGEST_KEY_PREFIX = INGEST_KEY + ".";
@@ -726,5 +732,17 @@ public final class IngestDocument {
             }
         }
 
+    }
+
+    // Hack, not good enough.
+    // Needed for prototype 2
+    public ConcurrentMap<String, Engine.Searcher> searcherMap = new ConcurrentHashMap<>();
+    public ConcurrentMap<Tuple<String, String>, IndexFieldData<?>> fieldDataMap = new ConcurrentHashMap<>();
+
+    @Override
+    public void close() {
+        searcherMap.values().forEach(Engine.Searcher::close);
+        searcherMap.clear();
+        fieldDataMap.clear();
     }
 }

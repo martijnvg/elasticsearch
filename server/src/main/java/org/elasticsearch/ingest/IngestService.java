@@ -547,22 +547,24 @@ public class IngestService implements ClusterStateApplier {
             Long version = indexRequest.version();
             VersionType versionType = indexRequest.versionType();
             Map<String, Object> sourceAsMap = indexRequest.sourceAsMap();
-            IngestDocument ingestDocument = new IngestDocument(index, type, id, routing, version, versionType, sourceAsMap);
-            if (pipeline.execute(ingestDocument) == null) {
-                itemDroppedHandler.accept(indexRequest);
-            } else {
-                Map<IngestDocument.MetaData, Object> metadataMap = ingestDocument.extractMetadata();
-                //it's fine to set all metadata fields all the time, as ingest document holds their starting values
-                //before ingestion, which might also get modified during ingestion.
-                indexRequest.index((String) metadataMap.get(IngestDocument.MetaData.INDEX));
-                indexRequest.type((String) metadataMap.get(IngestDocument.MetaData.TYPE));
-                indexRequest.id((String) metadataMap.get(IngestDocument.MetaData.ID));
-                indexRequest.routing((String) metadataMap.get(IngestDocument.MetaData.ROUTING));
-                indexRequest.version(((Number) metadataMap.get(IngestDocument.MetaData.VERSION)).longValue());
-                if (metadataMap.get(IngestDocument.MetaData.VERSION_TYPE) != null) {
-                    indexRequest.versionType(VersionType.fromString((String) metadataMap.get(IngestDocument.MetaData.VERSION_TYPE)));
+            // Needed for prototype 2:
+            try (IngestDocument ingestDocument = new IngestDocument(index, type, id, routing, version, versionType, sourceAsMap)) {
+                if (pipeline.execute(ingestDocument) == null) {
+                    itemDroppedHandler.accept(indexRequest);
+                } else {
+                    Map<IngestDocument.MetaData, Object> metadataMap = ingestDocument.extractMetadata();
+                    //it's fine to set all metadata fields all the time, as ingest document holds their starting values
+                    //before ingestion, which might also get modified during ingestion.
+                    indexRequest.index((String) metadataMap.get(IngestDocument.MetaData.INDEX));
+                    indexRequest.type((String) metadataMap.get(IngestDocument.MetaData.TYPE));
+                    indexRequest.id((String) metadataMap.get(IngestDocument.MetaData.ID));
+                    indexRequest.routing((String) metadataMap.get(IngestDocument.MetaData.ROUTING));
+                    indexRequest.version(((Number) metadataMap.get(IngestDocument.MetaData.VERSION)).longValue());
+                    if (metadataMap.get(IngestDocument.MetaData.VERSION_TYPE) != null) {
+                        indexRequest.versionType(VersionType.fromString((String) metadataMap.get(IngestDocument.MetaData.VERSION_TYPE)));
+                    }
+                    indexRequest.source(ingestDocument.getSourceAndMetadata());
                 }
-                indexRequest.source(ingestDocument.getSourceAndMetadata());
             }
         } catch (Exception e) {
             totalMetrics.ingestFailed();

@@ -11,6 +11,7 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.util.BytesRef;
+import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.fielddata.AtomicFieldData;
 import org.elasticsearch.index.fielddata.AtomicNumericFieldData;
@@ -50,66 +51,63 @@ public final class DecorateProcessor2 extends AbstractProcessor {
         final String targetField = "lookup";
         final String indexName = "lookup";
         final String fieldName = "Domain";
-        final String[] extractFields = new String[] {"GlobalRank"};
+        final String[] extractFields = new String[]{"GlobalRank"};
 
         final String value = ingestDocument.getFieldValue(domainField, String.class);
         final TermQuery termQuery = new TermQuery(new Term(fieldName, new BytesRef(value)));
 
-        // TODO: part of what searcherProvider is doing should be done once per shard bulk request
-        // (E.g. open searcher once per shard bulk request, index / alias lookup)
-        try (Engine.Searcher searcher = searcherProvider.apply(indexName)) {
-            if (searcher.getDirectoryReader().leaves().size() > 1) {
-                throw new RuntimeException("lookup shard should only have 1 segment");
-            }
+        Engine.Searcher searcher = ingestDocument.searcherMap.computeIfAbsent(indexName, searcherProvider);
+        if (searcher.getDirectoryReader().leaves().size() > 1) {
+            throw new RuntimeException("lookup shard should only have 1 segment");
+        }
 
-            TopDocs topDocs = searcher.searcher().search(termQuery, 1);
-            if (topDocs.totalHits.value == 1) {
-                final Map<String, Object> additionalData = new HashMap<>();
-                final LeafReaderContext leaf = searcher.reader().leaves().get(0);
+        TopDocs topDocs = searcher.searcher().search(termQuery, 1);
+        if (topDocs.totalHits.value == 1) {
+            final Map<String, Object> additionalData = new HashMap<>();
+            final LeafReaderContext leaf = searcher.reader().leaves().get(0);
 
-                for (final String extractField : extractFields) {
-                    // TODO: part of what fieldDataProvider is doing should be done once per shard bulk request
-                    final IndexFieldData<?> indexFieldData = fieldDataProvider.apply(indexName, extractField);
-                    final AtomicFieldData data = indexFieldData.load(leaf);
+            for (final String extractField : extractFields) {
+                final IndexFieldData<?> indexFieldData = ingestDocument.fieldDataMap.computeIfAbsent(Tuple.tuple(indexName, extractField),
+                    key -> fieldDataProvider.apply(key.v1(), key.v2()));
+                final AtomicFieldData data = indexFieldData.load(leaf);
 
-                    List<Object> values = new LinkedList<>();
-                    if (indexFieldData instanceof IndexNumericFieldData) {
-                        final IndexNumericFieldData.NumericType numericType = ((IndexNumericFieldData) indexFieldData).getNumericType();
-                        if (numericType.isFloatingPoint()) {
-                            final SortedNumericDoubleValues doubleValues = ((AtomicNumericFieldData) data).getDoubleValues();
-                            if (doubleValues.advanceExact(topDocs.scoreDocs[0].doc)) {
-                                for (int i = 0; i < doubleValues.docValueCount(); i++) {
-                                    values.add(doubleValues.nextValue());
-                                }
-                            }
-                        } else {
-                            final SortedNumericDocValues longValues = ((AtomicNumericFieldData) data).getLongValues();
-                            if (longValues.advanceExact(topDocs.scoreDocs[0].doc)) {
-                                for (int i = 0; i < longValues.docValueCount(); i++) {
-                                    values.add(longValues.nextValue());
-                                }
+                List<Object> values = new LinkedList<>();
+                if (indexFieldData instanceof IndexNumericFieldData) {
+                    final IndexNumericFieldData.NumericType numericType = ((IndexNumericFieldData) indexFieldData).getNumericType();
+                    if (numericType.isFloatingPoint()) {
+                        final SortedNumericDoubleValues doubleValues = ((AtomicNumericFieldData) data).getDoubleValues();
+                        if (doubleValues.advanceExact(topDocs.scoreDocs[0].doc)) {
+                            for (int i = 0; i < doubleValues.docValueCount(); i++) {
+                                values.add(doubleValues.nextValue());
                             }
                         }
                     } else {
-                        SortedBinaryDocValues binaryValues = data.getBytesValues();
-                        if (binaryValues.advanceExact(topDocs.scoreDocs[0].doc)) {
-                            for (int i = 0; i != binaryValues.docValueCount(); i++) {
-                                values.add(binaryValues.nextValue().utf8ToString());
+                        final SortedNumericDocValues longValues = ((AtomicNumericFieldData) data).getLongValues();
+                        if (longValues.advanceExact(topDocs.scoreDocs[0].doc)) {
+                            for (int i = 0; i < longValues.docValueCount(); i++) {
+                                values.add(longValues.nextValue());
                             }
                         }
                     }
-
-                    final int size = values.size();
-                    if (size == 1) {
-                        additionalData.put(extractField, values.get(0));
-                    } else if (size != 0) {
-                        additionalData.put(extractField, values);
+                } else {
+                    SortedBinaryDocValues binaryValues = data.getBytesValues();
+                    if (binaryValues.advanceExact(topDocs.scoreDocs[0].doc)) {
+                        for (int i = 0; i != binaryValues.docValueCount(); i++) {
+                            values.add(binaryValues.nextValue().utf8ToString());
+                        }
                     }
                 }
-                ingestDocument.setFieldValue(targetField, additionalData);
-            } else if (topDocs.totalHits.value > 1) {
-                throw new RuntimeException();
+
+                final int size = values.size();
+                if (size == 1) {
+                    additionalData.put(extractField, values.get(0));
+                } else if (size != 0) {
+                    additionalData.put(extractField, values);
+                }
             }
+            ingestDocument.setFieldValue(targetField, additionalData);
+        } else if (topDocs.totalHits.value > 1) {
+            throw new RuntimeException();
         }
 
         return ingestDocument;
@@ -126,7 +124,7 @@ public final class DecorateProcessor2 extends AbstractProcessor {
         private final BiFunction<String, String, IndexFieldData<?>> fieldDateProvider;
 
         Factory(Function<String, Engine.Searcher> searcherProvider,
-                       BiFunction<String, String, IndexFieldData<?>> fieldDateProvider) {
+                BiFunction<String, String, IndexFieldData<?>> fieldDateProvider) {
             this.searcherProvider = searcherProvider;
             this.fieldDateProvider = fieldDateProvider;
         }

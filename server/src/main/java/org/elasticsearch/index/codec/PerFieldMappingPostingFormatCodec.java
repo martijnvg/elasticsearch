@@ -59,6 +59,8 @@ public class PerFieldMappingPostingFormatCodec extends Lucene80Codec {
             logger.warn("no index mapper found for field: [{}] returning default postings format", field);
         } else if (fieldType instanceof CompletionFieldMapper.CompletionFieldType) {
             return CompletionFieldMapper.CompletionFieldType.postingsFormat();
+        } else if (fieldType.hasCustomPostingsFormat()) {
+            return fieldType.customPostingsFormat();
         }
         return super.getPostingsFormatForField(field);
     }

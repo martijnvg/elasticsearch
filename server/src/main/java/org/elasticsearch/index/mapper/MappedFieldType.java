@@ -20,6 +20,7 @@
 package org.elasticsearch.index.mapper;
 
 import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.codecs.PostingsFormat;
 import org.apache.lucene.document.FieldType;
 import org.apache.lucene.index.IndexOptions;
 import org.apache.lucene.index.IndexReader;
@@ -485,6 +486,15 @@ public abstract class MappedFieldType extends FieldType {
                     + termQuery.getClass() + ": " + termQuery);
         }
         return ((TermQuery) termQuery).getTerm();
+    }
+
+    // Extension point needed for prototype4:
+    public boolean hasCustomPostingsFormat() {
+        return false;
+    }
+
+    public PostingsFormat customPostingsFormat() {
+        return null;
     }
 
 }

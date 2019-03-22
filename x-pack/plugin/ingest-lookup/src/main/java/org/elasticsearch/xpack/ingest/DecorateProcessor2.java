@@ -6,10 +6,10 @@
 package org.elasticsearch.xpack.ingest;
 
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.PostingsEnum;
 import org.apache.lucene.index.SortedNumericDocValues;
-import org.apache.lucene.index.Term;
-import org.apache.lucene.search.TermQuery;
-import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.index.Terms;
+import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.index.engine.Engine;
@@ -54,18 +54,21 @@ public final class DecorateProcessor2 extends AbstractProcessor {
         final String[] extractFields = new String[]{"GlobalRank"};
 
         final String value = ingestDocument.getFieldValue(domainField, String.class);
-        final TermQuery termQuery = new TermQuery(new Term(fieldName, new BytesRef(value)));
-
         Engine.Searcher searcher = ingestDocument.searcherMap.computeIfAbsent(indexName, searcherProvider);
         if (searcher.getDirectoryReader().leaves().size() > 1) {
             throw new RuntimeException("lookup shard should only have 1 segment");
         }
 
-        TopDocs topDocs = searcher.searcher().search(termQuery, 1);
-        if (topDocs.totalHits.value == 1) {
-            final Map<String, Object> additionalData = new HashMap<>();
-            final LeafReaderContext leaf = searcher.reader().leaves().get(0);
+        final LeafReaderContext leaf = searcher.reader().leaves().get(0);
+        Terms terms = leaf.reader().terms(fieldName);
+        TermsEnum tenum = terms.iterator();
+        if (tenum.seekExact(new BytesRef(value))) {
+            final PostingsEnum penum = tenum.postings(null, PostingsEnum.NONE);
+            final int docId = penum.nextDoc();
+            assert docId != PostingsEnum.NO_MORE_DOCS;
+            assert penum.freq() == 1;
 
+            final Map<String, Object> additionalData = new HashMap<>();
             for (final String extractField : extractFields) {
                 final IndexFieldData<?> indexFieldData = ingestDocument.fieldDataMap.computeIfAbsent(Tuple.tuple(indexName, extractField),
                     key -> fieldDataProvider.apply(key.v1(), key.v2()));
@@ -76,14 +79,14 @@ public final class DecorateProcessor2 extends AbstractProcessor {
                     final IndexNumericFieldData.NumericType numericType = ((IndexNumericFieldData) indexFieldData).getNumericType();
                     if (numericType.isFloatingPoint()) {
                         final SortedNumericDoubleValues doubleValues = ((AtomicNumericFieldData) data).getDoubleValues();
-                        if (doubleValues.advanceExact(topDocs.scoreDocs[0].doc)) {
+                        if (doubleValues.advanceExact(docId)) {
                             for (int i = 0; i < doubleValues.docValueCount(); i++) {
                                 values.add(doubleValues.nextValue());
                             }
                         }
                     } else {
                         final SortedNumericDocValues longValues = ((AtomicNumericFieldData) data).getLongValues();
-                        if (longValues.advanceExact(topDocs.scoreDocs[0].doc)) {
+                        if (longValues.advanceExact(docId)) {
                             for (int i = 0; i < longValues.docValueCount(); i++) {
                                 values.add(longValues.nextValue());
                             }
@@ -91,7 +94,7 @@ public final class DecorateProcessor2 extends AbstractProcessor {
                     }
                 } else {
                     SortedBinaryDocValues binaryValues = data.getBytesValues();
-                    if (binaryValues.advanceExact(topDocs.scoreDocs[0].doc)) {
+                    if (binaryValues.advanceExact(docId)) {
                         for (int i = 0; i != binaryValues.docValueCount(); i++) {
                             values.add(binaryValues.nextValue().utf8ToString());
                         }
@@ -106,8 +109,6 @@ public final class DecorateProcessor2 extends AbstractProcessor {
                 }
             }
             ingestDocument.setFieldValue(targetField, additionalData);
-        } else if (topDocs.totalHits.value > 1) {
-            throw new RuntimeException();
         }
 
         return ingestDocument;

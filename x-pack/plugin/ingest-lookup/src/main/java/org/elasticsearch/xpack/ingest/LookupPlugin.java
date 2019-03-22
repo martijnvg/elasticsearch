@@ -25,6 +25,7 @@ public class LookupPlugin extends Plugin implements IngestPlugin, MapperPlugin {
         factories.put(DecorateProcessor2.TYPE, new DecorateProcessor2.Factory(parameters.searcherProvider, parameters.fieldDateProvider));
         factories.put(DecorateProcessor3.TYPE, new DecorateProcessor3.Factory(parameters.searcherProvider, parameters.fieldDateProvider));
         factories.put(DecorateProcessor4.TYPE, new DecorateProcessor4.Factory(parameters.searcherProvider, parameters.fieldDateProvider));
+        factories.put(DecorateProcessor5.TYPE, new DecorateProcessor5.Factory(parameters.searcherProvider, parameters.fieldDateProvider));
         return factories;
     }
 

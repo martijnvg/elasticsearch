@@ -51,7 +51,6 @@ dependencies {
     testCompile(project(':x-pack:license-tools')) {
         transitive = false
     }
-    testCompile ("org.elasticsearch.client:elasticsearch-rest-high-level-client:${version}")
 }
 
 ext.expansions = [
@@ -98,8 +97,8 @@ licenseHeaders {
 }
 
 // make LicenseSigner available for testing signed licenses
-sourceSets.test.resources {
-    srcDir 'src/main/config'
+sourceSets.test.java {
+    srcDir '../../license-tools/src/main/java'
 }
 
 unitTest {

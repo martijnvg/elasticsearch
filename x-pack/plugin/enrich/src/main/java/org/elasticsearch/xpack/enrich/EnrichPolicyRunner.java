@@ -223,7 +223,7 @@ public class EnrichPolicyRunner implements Runnable {
     }
 
     private void forceMergeEnrichIndex(final String destinationIndexName) {
-        logger.debug("Policy [{}]: Force merging newly created enrich index [{}]", policyName, destinationIndexName);
+        logger.info("Policy [{}]: Force merging newly created enrich index [{}]", policyName, destinationIndexName);
         client.admin().indices().forceMerge(new ForceMergeRequest(destinationIndexName).maxNumSegments(1), new ActionListener<>() {
             @Override
             public void onResponse(ForceMergeResponse forceMergeResponse) {

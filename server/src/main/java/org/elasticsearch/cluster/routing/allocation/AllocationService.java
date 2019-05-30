@@ -392,7 +392,8 @@ public class AllocationService {
 
     private boolean hasDeadNodes(RoutingAllocation allocation) {
         for (RoutingNode routingNode : allocation.routingNodes()) {
-            if (allocation.nodes().getDataNodes().containsKey(routingNode.nodeId()) == false) {
+            if (allocation.nodes().getDataNodes().containsKey(routingNode.nodeId()) == false &&
+                allocation.nodes().getIngestNodes().containsKey(routingNode.nodeId()) == false) {
                 return true;
             }
         }

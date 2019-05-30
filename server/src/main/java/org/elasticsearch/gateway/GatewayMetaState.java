@@ -178,7 +178,7 @@ public class GatewayMetaState implements ClusterStateApplier, CoordinationState.
     }
 
     private boolean isMasterOrDataNode() {
-        return DiscoveryNode.isMasterNode(settings) || DiscoveryNode.isDataNode(settings);
+        return DiscoveryNode.isMasterNode(settings) || DiscoveryNode.isDataNode(settings) || DiscoveryNode.isIngestNode(settings);
     }
 
     public MetaData getMetaData() {

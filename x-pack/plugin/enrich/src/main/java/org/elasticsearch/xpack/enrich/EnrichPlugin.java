@@ -115,7 +115,8 @@ public class EnrichPlugin extends Plugin implements ActionPlugin, IngestPlugin {
                                                NodeEnvironment nodeEnvironment, NamedWriteableRegistry namedWriteableRegistry) {
         EnrichPolicyExecutor enrichPolicyExecutor = new EnrichPolicyExecutor(settings, clusterService, client, threadPool,
             new IndexNameExpressionResolver(), System::currentTimeMillis);
-        return Collections.singleton(enrichPolicyExecutor);
+        EnrichAllocator enrichAllocator = new EnrichAllocator(clusterService);
+        return List.of(enrichPolicyExecutor, enrichAllocator);
     }
 
     @Override

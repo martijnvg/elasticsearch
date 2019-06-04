@@ -52,6 +52,9 @@ final class ExactMatchProcessor extends AbstractProcessor {
         this.specifications = specifications;
     }
 
+    // good enough for benchmarking. (need way to close and cleanup searchers)
+    private volatile Tuple<IndexMetaData, Engine.Searcher> reference;
+
     @Override
     public IngestDocument execute(IngestDocument ingestDocument) throws Exception {
         final String value = ingestDocument.getFieldValue(enrichKey, String.class, ignoreMissing);
@@ -59,11 +62,18 @@ final class ExactMatchProcessor extends AbstractProcessor {
             return ingestDocument;
         }
 
-        // TODO: re-use the engine searcher between enriching documents from the same write request
-        Tuple<IndexMetaData, Engine.Searcher> tuple = searchProvider.apply(EnrichPolicy.getBaseName(policyName));
+        final Tuple<IndexMetaData, Engine.Searcher> tuple;
+        if (reference == null) {
+            synchronized (this) {
+                reference = tuple = searchProvider.apply(EnrichPolicy.getBaseName(policyName));
+            }
+        } else {
+            tuple = reference;
+        }
         String enrichKeyField = getEnrichKeyField(tuple.v1());
 
-        try (Engine.Searcher engineSearcher = tuple.v2()) {
+//        try (Engine.Searcher engineSearcher = tuple.v2()) {
+            Engine.Searcher engineSearcher = tuple.v2();
             if (engineSearcher.getDirectoryReader().leaves().size() == 0) {
                 return ingestDocument;
             } else if (engineSearcher.getDirectoryReader().leaves().size() != 1) {
@@ -98,7 +108,7 @@ final class ExactMatchProcessor extends AbstractProcessor {
                     ingestDocument.setFieldValue(specification.targetField, enrichValue);
                 }
             }
-        }
+//        }
         return ingestDocument;
     }
 

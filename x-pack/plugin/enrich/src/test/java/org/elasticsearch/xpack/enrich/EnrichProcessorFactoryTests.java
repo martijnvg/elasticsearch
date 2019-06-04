@@ -27,7 +27,7 @@ public class EnrichProcessorFactoryTests extends ESTestCase {
         List<String> enrichValues = List.of("globalRank", "tldRank", "tld");
         EnrichPolicy policy = new EnrichPolicy(EnrichPolicy.EXACT_MATCH_TYPE, null, List.of("source_index"), "my_key",
             enrichValues);
-        EnrichProcessorFactory factory = new EnrichProcessorFactory(null);
+        EnrichProcessorFactory factory = new EnrichProcessorFactory(null, null);
         factory.policies = Map.of("majestic", policy);
 
         Map<String, Object> config = new HashMap<>();
@@ -50,7 +50,7 @@ public class EnrichProcessorFactoryTests extends ESTestCase {
         }
         config.put("enrich_values", valuesConfig);
 
-        ExactMatchProcessor result = (ExactMatchProcessor) factory.create(Collections.emptyMap(), "_tag", config);
+        ExactMatchProcessor2 result = (ExactMatchProcessor2) factory.create(Collections.emptyMap(), "_tag", config);
         assertThat(result, notNullValue());
         assertThat(result.getPolicyName(), equalTo("majestic"));
         assertThat(result.getEnrichKey(), equalTo("host"));
@@ -66,7 +66,7 @@ public class EnrichProcessorFactoryTests extends ESTestCase {
 
     public void testPolicyDoesNotExist() {
         List<String> enrichValues = List.of("globalRank", "tldRank", "tld");
-        EnrichProcessorFactory factory = new EnrichProcessorFactory(null);
+        EnrichProcessorFactory factory = new EnrichProcessorFactory(null, null);
 
         Map<String, Object> config = new HashMap<>();
         config.put("policy_name", "majestic");
@@ -96,7 +96,7 @@ public class EnrichProcessorFactoryTests extends ESTestCase {
         List<String> enrichValues = List.of("globalRank", "tldRank", "tld");
         EnrichPolicy policy = new EnrichPolicy(EnrichPolicy.EXACT_MATCH_TYPE, null, List.of("source_index"), "my_key",
             enrichValues);
-        EnrichProcessorFactory factory = new EnrichProcessorFactory(null);
+        EnrichProcessorFactory factory = new EnrichProcessorFactory(null, null);
         factory.policies = Map.of("_name", policy);
 
         Map<String, Object> config = new HashMap<>();
@@ -125,7 +125,7 @@ public class EnrichProcessorFactoryTests extends ESTestCase {
     public void testUnsupportedPolicy() {
         List<String> enrichValues = List.of("globalRank", "tldRank", "tld");
         EnrichPolicy policy = new EnrichPolicy("unsupported", null, List.of("source_index"), "my_key", enrichValues);
-        EnrichProcessorFactory factory = new EnrichProcessorFactory(null);
+        EnrichProcessorFactory factory = new EnrichProcessorFactory(null, null);
         factory.policies = Map.of("majestic", policy);
 
         Map<String, Object> config = new HashMap<>();
@@ -156,7 +156,7 @@ public class EnrichProcessorFactoryTests extends ESTestCase {
         List<String> enrichValues = List.of("globalRank", "tldRank", "tld");
         EnrichPolicy policy = new EnrichPolicy(EnrichPolicy.EXACT_MATCH_TYPE, null, List.of("source_index"), "my_key",
             enrichValues);
-        EnrichProcessorFactory factory = new EnrichProcessorFactory(null);
+        EnrichProcessorFactory factory = new EnrichProcessorFactory(null, null);
         factory.policies = Map.of("majestic", policy);
 
         Map<String, Object> config = new HashMap<>();

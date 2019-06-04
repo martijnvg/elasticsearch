@@ -5,6 +5,8 @@
  */
 package org.elasticsearch.xpack.enrich;
 
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.common.collect.Tuple;
@@ -23,10 +25,13 @@ final class EnrichProcessorFactory implements Processor.Factory, Consumer<Cluste
 
     static final String TYPE = "enrich";
     private final Function<String, Tuple<IndexMetaData, Engine.Searcher>> searchProvider;
+    private final Function<SearchRequest, SearchResponse> searchClient;
     volatile Map<String, EnrichPolicy> policies = Map.of();
 
-    EnrichProcessorFactory(Function<String, Tuple<IndexMetaData, Engine.Searcher>> searchProvider) {
+    EnrichProcessorFactory(Function<String, Tuple<IndexMetaData, Engine.Searcher>> searchProvider,
+                           Function<SearchRequest, SearchResponse> searchClient) {
         this.searchProvider = searchProvider;
+        this.searchClient = searchClient;
     }
 
     @Override
@@ -56,7 +61,7 @@ final class EnrichProcessorFactory implements Processor.Factory, Consumer<Cluste
 
         switch (policy.getType()) {
             case EnrichPolicy.EXACT_MATCH_TYPE:
-                return new ExactMatchProcessor(tag, searchProvider, policyName, enrichKey, ignoreMissing, specifications);
+                return new ExactMatchProcessor2(tag, searchClient, policyName, policy, enrichKey, ignoreMissing, specifications);
             default:
                 throw new IllegalArgumentException("unsupported policy type [" + policy.getType() + "]");
         }

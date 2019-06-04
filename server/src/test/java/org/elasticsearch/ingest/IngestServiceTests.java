@@ -98,7 +98,7 @@ public class IngestServiceTests extends ESTestCase {
     public void testIngestPlugin() {
         ThreadPool tp = mock(ThreadPool.class);
         IngestService ingestService = new IngestService(mock(ClusterService.class), tp, null, null,
-            null, Collections.singletonList(DUMMY_PLUGIN), null);
+            null, Collections.singletonList(DUMMY_PLUGIN), null, null);
         Map<String, Processor.Factory> factories = ingestService.getProcessorFactories();
         assertTrue(factories.containsKey("foo"));
         assertEquals(1, factories.size());
@@ -108,7 +108,7 @@ public class IngestServiceTests extends ESTestCase {
         ThreadPool tp = mock(ThreadPool.class);
         IllegalArgumentException e = expectThrows(IllegalArgumentException.class, () ->
             new IngestService(mock(ClusterService.class), tp, null, null,
-            null, Arrays.asList(DUMMY_PLUGIN, DUMMY_PLUGIN), null));
+            null, Arrays.asList(DUMMY_PLUGIN, DUMMY_PLUGIN), null, null));
         assertTrue(e.getMessage(), e.getMessage().contains("already registered"));
     }
 
@@ -117,7 +117,7 @@ public class IngestServiceTests extends ESTestCase {
         final ExecutorService executorService = EsExecutors.newDirectExecutorService();
         when(threadPool.executor(anyString())).thenReturn(executorService);
         IngestService ingestService = new IngestService(mock(ClusterService.class), threadPool, null, null,
-            null, Collections.singletonList(DUMMY_PLUGIN), null);
+            null, Collections.singletonList(DUMMY_PLUGIN), null, null);
         final IndexRequest indexRequest = new IndexRequest("_index", "_type", "_id").source(emptyMap()).setPipeline("_id");
 
         final SetOnce<Boolean> failure = new SetOnce<>();
@@ -1063,7 +1063,7 @@ public class IngestServiceTests extends ESTestCase {
             public Map<String, Processor.Factory> getProcessors(final Processor.Parameters parameters) {
                 return processors;
             }
-        }), null);
+        }), null, null);
     }
 
     private class IngestDocumentMatcher extends ArgumentMatcher<IngestDocument> {

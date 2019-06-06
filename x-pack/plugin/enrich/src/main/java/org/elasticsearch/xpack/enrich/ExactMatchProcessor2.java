@@ -68,6 +68,7 @@ final class ExactMatchProcessor2 extends AbstractProcessor {
                 .query(new ConstantScoreQueryBuilder(termQuery))
                 .fetchSource(false)
                 .trackScores(false)
+                .size(1)
             );
             searchRequest.source().docValueField("_enrich_source");
 

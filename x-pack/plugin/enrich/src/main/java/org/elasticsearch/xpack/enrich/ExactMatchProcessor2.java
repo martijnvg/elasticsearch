@@ -11,6 +11,7 @@ import org.elasticsearch.common.cache.Cache;
 import org.elasticsearch.common.cache.CacheBuilder;
 import org.elasticsearch.common.xcontent.XContentHelper;
 import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.index.query.ConstantScoreQueryBuilder;
 import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.ingest.AbstractProcessor;
 import org.elasticsearch.ingest.IngestDocument;
@@ -64,8 +65,9 @@ final class ExactMatchProcessor2 extends AbstractProcessor {
             SearchRequest searchRequest = new SearchRequest(EnrichPolicy.getBaseName(policyName));
             searchRequest.allowPartialSearchResults(true);
             searchRequest.source(new SearchSourceBuilder()
-                .query(termQuery)
+                .query(new ConstantScoreQueryBuilder(termQuery))
                 .fetchSource(false)
+                .trackScores(false)
             );
             searchRequest.source().docValueField("_enrich_source");
 

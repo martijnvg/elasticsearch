@@ -134,7 +134,7 @@ public class IngestService implements ClusterStateApplier {
                     IndexMetaData imd = state.metaData().index(index);
                     return new Tuple<>(imd, indexShard.acquireSearcher("ingest"));
                 },
-                searchRequest -> client.search(searchRequest).actionGet())
+                client)
         );
         this.threadPool = threadPool;
     }

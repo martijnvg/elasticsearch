@@ -21,6 +21,7 @@ package org.elasticsearch.ingest;
 
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.Client;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.common.util.concurrent.ThreadContext;
@@ -125,12 +126,12 @@ public interface Processor {
          */
         public final Function<String, Tuple<IndexMetaData, Engine.Searcher>> localShardSearcher;
 
-        public final Function<SearchRequest, SearchResponse> searchClient;
+        public final Client client;
 
         public Parameters(Environment env, ScriptService scriptService, AnalysisRegistry analysisRegistry, ThreadContext threadContext,
                           LongSupplier relativeTimeSupplier, BiFunction<Long, Runnable, Scheduler.ScheduledCancellable> scheduler,
                           IngestService ingestService, Function<String, Tuple<IndexMetaData, Engine.Searcher>> localShardSearcher,
-                          Function<SearchRequest, SearchResponse> searchClient) {
+                          Client client) {
             this.env = env;
             this.scriptService = scriptService;
             this.threadContext = threadContext;
@@ -139,7 +140,7 @@ public interface Processor {
             this.scheduler = scheduler;
             this.ingestService = ingestService;
             this.localShardSearcher = localShardSearcher;
-            this.searchClient = searchClient;
+            this.client = client;
         }
 
     }

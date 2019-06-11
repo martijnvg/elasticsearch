@@ -63,7 +63,7 @@ import java.util.Map;
  */
 public final class EnrichSourceFieldMapper extends MetadataFieldMapper {
 
-    static final String NAME = "_enrich_source";
+    public static final String NAME = "_enrich_source";
 
     private static final MappedFieldType DEFAULT = new FieldType();
     private static final boolean DEFAULT_ENABLED = false;

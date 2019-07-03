@@ -71,7 +71,7 @@ public class CoordinatorProxyAction extends ActionType<SearchResponse> {
 
         public Coordinator(Client client, Settings settings) {
             this(
-                (request, consumer) -> client.multiSearch(request,
+                (request, consumer) -> client.execute(ShardMultiSearchAction.INSTANCE, new ShardMultiSearchAction.Request(request),
                     ActionListener.wrap(response -> consumer.accept(response, null), e -> consumer.accept(null, e))),
                 EnrichPlugin.COORDINATOR_PROXY_MAX_LOOKUPS_PER_REQUEST.get(settings),
                 EnrichPlugin.COORDINATOR_PROXY_MAX_CONCURRENT_REQUESTS.get(settings),

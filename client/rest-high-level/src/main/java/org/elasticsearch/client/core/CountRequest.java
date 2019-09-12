@@ -171,6 +171,9 @@ public final class CountRequest extends ActionRequest implements IndicesRequest.
     }
 
     public CountRequest terminateAfter(int terminateAfter) {
+        if (terminateAfter < 0) {
+            throw new IllegalArgumentException("terminateAfter must be > 0");
+        }
         this.terminateAfter = terminateAfter;
         return this;
     }

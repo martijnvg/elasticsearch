@@ -1193,8 +1193,8 @@ public class RequestConvertersTests extends ESTestCase {
         }
         if (randomBoolean()){
             countRequest.terminateAfter(randomIntBetween(0, Integer.MAX_VALUE));
+            expectedParams.put("terminateAfter", String.valueOf(countRequest.terminateAfter()));
         }
-        expectedParams.put("terminateAfter", String.valueOf(countRequest.terminateAfter()));
     }
 
     public void testMultiSearch() throws IOException {

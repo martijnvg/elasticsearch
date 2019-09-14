@@ -498,7 +498,9 @@ final class RequestConverters {
         params.withRouting(countRequest.routing());
         params.withPreference(countRequest.preference());
         params.withIndicesOptions(countRequest.indicesOptions());
-        params.withTerminateAfter(countRequest.terminateAfter());
+        if (countRequest.terminateAfter() !=0){
+            params.withTerminateAfter(countRequest.terminateAfter());
+        }
         request.addParameters(params.asMap());
         request.setEntity(createEntity(countRequest.source(), REQUEST_BODY_CONTENT_TYPE));
         return request;

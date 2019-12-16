@@ -34,6 +34,7 @@ import org.elasticsearch.test.ESTestCase;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 import static java.util.Collections.singletonMap;
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -78,13 +79,13 @@ public class IndexTemplateMetaDataTests extends ESTestCase {
     public void testValidateInvalidIndexPatterns() throws Exception {
         final IllegalArgumentException emptyPatternError = expectThrows(IllegalArgumentException.class, () -> {
             new IndexTemplateMetaData(randomRealisticUnicodeOfLengthBetween(5, 10), randomInt(), randomInt(),
-                Collections.emptyList(), Settings.EMPTY, ImmutableOpenMap.of(), ImmutableOpenMap.of());
+                Collections.emptyList(), List.of(), Settings.EMPTY, ImmutableOpenMap.of(), ImmutableOpenMap.of());
         });
         assertThat(emptyPatternError.getMessage(), equalTo("Index patterns must not be null or empty; got []"));
 
         final IllegalArgumentException nullPatternError = expectThrows(IllegalArgumentException.class, () -> {
             new IndexTemplateMetaData(randomRealisticUnicodeOfLengthBetween(5, 10), randomInt(), randomInt(),
-                null, Settings.EMPTY, ImmutableOpenMap.of(), ImmutableOpenMap.of());
+                null, List.of(), Settings.EMPTY, ImmutableOpenMap.of(), ImmutableOpenMap.of());
         });
         assertThat(nullPatternError.getMessage(), equalTo("Index patterns must not be null or empty; got null"));
 

@@ -70,7 +70,9 @@ public class PutIndexTemplateRequest extends MasterNodeRequest<PutIndexTemplateR
 
     private String cause = "";
 
-    private List<String> indexPatterns;
+    private List<String> indexPatterns = List.of();
+
+    private List<String> aliasPatterns = List.of();
 
     private int order;
 
@@ -89,6 +91,7 @@ public class PutIndexTemplateRequest extends MasterNodeRequest<PutIndexTemplateR
         cause = in.readString();
         name = in.readString();
         indexPatterns = in.readStringList();
+        aliasPatterns = in.readStringList();
         order = in.readInt();
         create = in.readBoolean();
         settings = readSettingsFromStream(in);
@@ -121,8 +124,8 @@ public class PutIndexTemplateRequest extends MasterNodeRequest<PutIndexTemplateR
         if (name == null) {
             validationException = addValidationError("name is missing", validationException);
         }
-        if (indexPatterns == null || indexPatterns.size() == 0) {
-            validationException = addValidationError("index patterns are missing", validationException);
+        if (indexPatterns.isEmpty() && aliasPatterns.isEmpty()) {
+            validationException = addValidationError("alias or index patterns are required", validationException);
         }
         return validationException;
     }
@@ -149,6 +152,15 @@ public class PutIndexTemplateRequest extends MasterNodeRequest<PutIndexTemplateR
 
     public List<String> patterns() {
         return this.indexPatterns;
+    }
+
+    public PutIndexTemplateRequest aliasPatterns(List<String> aliasPatterns) {
+        this.aliasPatterns = aliasPatterns;
+        return this;
+    }
+
+    public List<String> aliasPatterns() {
+        return this.aliasPatterns;
     }
 
     public PutIndexTemplateRequest order(int order) {
@@ -338,6 +350,15 @@ public class PutIndexTemplateRequest extends MasterNodeRequest<PutIndexTemplateR
                 } else {
                     throw new IllegalArgumentException("Malformed [index_patterns] value, should be a string or a list of strings");
                 }
+            } else if (name.equals("alias_patterns")) {
+                if(entry.getValue() instanceof String) {
+                    aliasPatterns(Collections.singletonList((String) entry.getValue()));
+                } else if (entry.getValue() instanceof List) {
+                    List<String> elements = ((List<?>) entry.getValue()).stream().map(Object::toString).collect(Collectors.toList());
+                    aliasPatterns(elements);
+                } else {
+                    throw new IllegalArgumentException("Malformed [alias_patterns] value, should be a string or a list of strings");
+                }
             } else if (name.equals("order")) {
                 order(XContentMapValues.nodeIntegerValue(entry.getValue(), order()));
             } else if ("version".equals(name)) {
@@ -473,6 +494,7 @@ public class PutIndexTemplateRequest extends MasterNodeRequest<PutIndexTemplateR
         out.writeString(cause);
         out.writeString(name);
         out.writeStringCollection(indexPatterns);
+        out.writeStringCollection(aliasPatterns);
         out.writeInt(order);
         out.writeBoolean(create);
         writeSettingsToStream(settings, out);

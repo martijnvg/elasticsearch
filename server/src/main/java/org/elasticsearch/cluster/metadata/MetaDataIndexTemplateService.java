@@ -237,7 +237,15 @@ public class MetaDataIndexTemplateService {
 
             templateBuilder.order(request.order);
             templateBuilder.version(request.version);
-            templateBuilder.patterns(request.indexPatterns);
+            if (request.indexPatterns.size() != 0 && request.aliasPatterns.size() != 0) {
+                throw new IllegalArgumentException();
+            }
+            if (request.indexPatterns.size() != 0) {
+                templateBuilder.patterns(request.indexPatterns);
+            }
+            if (request.aliasPatterns.size() != 0) {
+                templateBuilder.aliasPatterns(request.aliasPatterns);
+            }
             templateBuilder.settings(request.settings);
 
             Map<String, Map<String, Object>> mappingsForValidation = new HashMap<>();
@@ -337,6 +345,7 @@ public class MetaDataIndexTemplateService {
         int order;
         Integer version;
         List<String> indexPatterns;
+        List<String> aliasPatterns;
         Settings settings = Settings.Builder.EMPTY_SETTINGS;
         Map<String, String> mappings = new HashMap<>();
         List<Alias> aliases = new ArrayList<>();
@@ -355,6 +364,11 @@ public class MetaDataIndexTemplateService {
 
         public PutRequest patterns(List<String> indexPatterns) {
             this.indexPatterns = indexPatterns;
+            return this;
+        }
+
+        public PutRequest aliasPatterns(List<String> aliasPatterns) {
+            this.aliasPatterns = aliasPatterns;
             return this;
         }
 

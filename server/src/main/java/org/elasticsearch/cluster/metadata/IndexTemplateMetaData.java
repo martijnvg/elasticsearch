@@ -75,6 +75,8 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
 
     private final List<String> patterns;
 
+    private final List<String> aliasPatterns;
+
     private final Settings settings;
 
     // the mapping source should always include the type as top level
@@ -83,16 +85,17 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
     private final ImmutableOpenMap<String, AliasMetaData> aliases;
 
     public IndexTemplateMetaData(String name, int order, Integer version,
-                                 List<String> patterns, Settings settings,
+                                 List<String> patterns, List<String> aliasPatterns, Settings settings,
                                  ImmutableOpenMap<String, CompressedXContent> mappings,
                                  ImmutableOpenMap<String, AliasMetaData> aliases) {
-        if (patterns == null || patterns.isEmpty()) {
-            throw new IllegalArgumentException("Index patterns must not be null or empty; got " + patterns);
+        if (patterns.isEmpty() && aliasPatterns.isEmpty()) {
+            throw new IllegalArgumentException("Index or alias patterns must not be null or empty; got " + patterns);
         }
         this.name = name;
         this.order = order;
         this.version = version;
         this.patterns = patterns;
+        this.aliasPatterns = aliasPatterns;
         this.settings = settings;
         this.mappings = mappings;
         this.aliases = aliases;
@@ -126,6 +129,10 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
 
     public List<String> patterns() {
         return this.patterns;
+    }
+
+    public List<String> aliasPatterns() {
+        return this.aliasPatterns;
     }
 
     public Settings settings() {
@@ -164,6 +171,7 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
         if (!name.equals(that.name)) return false;
         if (!settings.equals(that.settings)) return false;
         if (!patterns.equals(that.patterns)) return false;
+        if (!aliasPatterns.equals(that.aliasPatterns)) return false;
 
         return Objects.equals(version, that.version);
     }
@@ -174,6 +182,7 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
         result = 31 * result + order;
         result = 31 * result + Objects.hashCode(version);
         result = 31 * result + patterns.hashCode();
+        result = 31 * result + aliasPatterns.hashCode();
         result = 31 * result + settings.hashCode();
         result = 31 * result + mappings.hashCode();
         return result;
@@ -183,6 +192,7 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
         Builder builder = new Builder(in.readString());
         builder.order(in.readInt());
         builder.patterns(in.readStringList());
+        builder.aliasPatterns(in.readStringList());
         builder.settings(Settings.readSettingsFromStream(in));
         int mappingsSize = in.readVInt();
         for (int i = 0; i < mappingsSize; i++) {
@@ -206,6 +216,7 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
         out.writeString(name);
         out.writeInt(order);
         out.writeStringCollection(patterns);
+        out.writeStringCollection(aliasPatterns);
         Settings.writeSettingsToStream(settings, out);
         out.writeVInt(mappings.size());
         for (ObjectObjectCursor<String, CompressedXContent> cursor : mappings) {
@@ -230,7 +241,9 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
 
         private Integer version;
 
-        private List<String> indexPatterns;
+        private List<String> indexPatterns = List.of();
+
+        private List<String> aliasPatterns = List.of();
 
         private Settings settings = Settings.Builder.EMPTY_SETTINGS;
 
@@ -249,6 +262,7 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
             order(indexTemplateMetaData.order());
             version(indexTemplateMetaData.version());
             patterns(indexTemplateMetaData.patterns());
+            aliasPatterns(indexTemplateMetaData.aliasPatterns());
             settings(indexTemplateMetaData.settings());
 
             mappings = ImmutableOpenMap.builder(indexTemplateMetaData.mappings());
@@ -270,6 +284,10 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
             return this;
         }
 
+        public Builder aliasPatterns(List<String> aliasPatterns) {
+            this.aliasPatterns = aliasPatterns;
+            return this;
+        }
 
         public Builder settings(Settings.Builder settings) {
             this.settings = settings.build();
@@ -302,7 +320,8 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
         }
 
         public IndexTemplateMetaData build() {
-            return new IndexTemplateMetaData(name, order, version, indexPatterns, settings, mappings.build(), aliases.build());
+            return new IndexTemplateMetaData(name, order, version, indexPatterns, aliasPatterns, settings, mappings.build(),
+                aliases.build());
         }
 
         /**
@@ -366,6 +385,7 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
                 builder.field("version", indexTemplateMetaData.version());
             }
             builder.field("index_patterns", indexTemplateMetaData.patterns());
+            builder.field("alias_patterns", indexTemplateMetaData.aliasPatterns());
 
             builder.startObject("settings");
             indexTemplateMetaData.settings().toXContent(builder, params);
@@ -478,6 +498,12 @@ public class IndexTemplateMetaData extends AbstractDiffable<IndexTemplateMetaDat
                             index_patterns.add(parser.text());
                         }
                         builder.patterns(index_patterns);
+                    } else if ("alias_patterns".equals(currentFieldName)) {
+                        List<String> aliasPatterns = new ArrayList<>();
+                        while ((token = parser.nextToken()) != XContentParser.Token.END_ARRAY) {
+                            aliasPatterns.add(parser.text());
+                        }
+                        builder.aliasPatterns(aliasPatterns);
                     }
                 } else if (token.isValue()) {
                     if ("order".equals(currentFieldName)) {

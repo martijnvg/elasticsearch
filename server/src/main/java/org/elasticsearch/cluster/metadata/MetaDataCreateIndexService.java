@@ -19,6 +19,7 @@
 
 package org.elasticsearch.cluster.metadata;
 
+import com.carrotsearch.hppc.cursors.ObjectCursor;
 import com.carrotsearch.hppc.cursors.ObjectObjectCursor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -52,6 +53,7 @@ import org.elasticsearch.common.UUIDs;
 import org.elasticsearch.common.ValidationException;
 import org.elasticsearch.common.compress.CompressedXContent;
 import org.elasticsearch.common.io.PathUtils;
+import org.elasticsearch.common.regex.Regex;
 import org.elasticsearch.common.settings.IndexScopedSettings;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
@@ -306,6 +308,40 @@ public class MetaDataCreateIndexService {
 
                 List<String> templateNames = new ArrayList<>();
 
+                IndexTemplateMetaData aliasTemplate = null;
+                for (ObjectCursor<IndexTemplateMetaData> cursor : currentState.metaData().templates().values()) {
+                    IndexTemplateMetaData template = cursor.value;
+                    if (Regex.simpleMatch(template.aliasPatterns(), request.index())) {
+                        aliasTemplate = template;
+                        break;
+                    }
+                }
+
+                String index = request.index();
+                boolean noWriteAliasExistsForTemplate = true;
+                if (aliasTemplate != null) {
+                    templates.clear();
+                    templates.add(aliasTemplate);
+                    for (Map.Entry<String, AliasOrIndex> entry : currentState.metaData().getAliasAndIndexLookup().entrySet()) {
+                        if (request.index().startsWith(entry.getKey())) {
+                            try {
+                                int indexOfLastDash = request.index().lastIndexOf('-');
+                                if (indexOfLastDash != -1) {
+                                    int number = Integer.parseInt(request.index().substring(indexOfLastDash + 1));
+                                    noWriteAliasExistsForTemplate = false;
+                                    break;
+                                }
+                            } catch (NumberFormatException e) {
+                                // ignore
+                            }
+                        }
+                    }
+                    if (noWriteAliasExistsForTemplate) {
+                        noWriteAliasExistsForTemplate = true;
+                        index = request.index() + "-000000";
+                    }
+                }
+
                 final Index recoverFromIndex = request.recoverFrom();
 
                 if (recoverFromIndex == null) {
@@ -346,11 +382,11 @@ public class MetaDataCreateIndexService {
                             // Allow templatesAliases to be templated by replacing a token with the
                             // name of the index that we are applying it to
                             if (aliasMetaData.alias().contains("{index}")) {
-                                String templatedAlias = aliasMetaData.alias().replace("{index}", request.index());
+                                String templatedAlias = aliasMetaData.alias().replace("{index}", index);
                                 aliasMetaData = AliasMetaData.newAliasMetaData(aliasMetaData, templatedAlias);
                             }
 
-                            aliasValidator.validateAliasMetaData(aliasMetaData, request.index(), currentState.metaData());
+                            aliasValidator.validateAliasMetaData(aliasMetaData, index, currentState.metaData());
                             templatesAliases.put(aliasMetaData.alias(), aliasMetaData);
                         }
                     }
@@ -382,9 +418,9 @@ public class MetaDataCreateIndexService {
                 if (indexSettingsBuilder.get(SETTING_CREATION_DATE) == null) {
                     indexSettingsBuilder.put(SETTING_CREATION_DATE, Instant.now().toEpochMilli());
                 }
-                indexSettingsBuilder.put(IndexMetaData.SETTING_INDEX_PROVIDED_NAME, request.getProvidedName());
+                indexSettingsBuilder.put(IndexMetaData.SETTING_INDEX_PROVIDED_NAME, index);
                 indexSettingsBuilder.put(SETTING_INDEX_UUID, UUIDs.randomBase64UUID());
-                final IndexMetaData.Builder tmpImdBuilder = IndexMetaData.builder(request.index());
+                final IndexMetaData.Builder tmpImdBuilder = IndexMetaData.builder(index);
                 final Settings idxSettings = indexSettingsBuilder.build();
                 int numTargetShards = IndexMetaData.INDEX_NUMBER_OF_SHARDS_SETTING.get(idxSettings);
                 final int routingNumShards;
@@ -507,7 +543,7 @@ public class MetaDataCreateIndexService {
                     mappingsMetaData.put(mapper.type(), mappingMd);
                 }
 
-                final IndexMetaData.Builder indexMetaDataBuilder = IndexMetaData.builder(request.index())
+                final IndexMetaData.Builder indexMetaDataBuilder = IndexMetaData.builder(index)
                     .settings(actualIndexSettings)
                     .setRoutingNumShards(routingNumShards);
 
@@ -525,6 +561,12 @@ public class MetaDataCreateIndexService {
                 for (Alias alias : request.aliases()) {
                     AliasMetaData aliasMetaData = AliasMetaData.builder(alias.name()).filter(alias.filter())
                         .indexRouting(alias.indexRouting()).searchRouting(alias.searchRouting()).writeIndex(alias.writeIndex()).build();
+                    indexMetaDataBuilder.putAlias(aliasMetaData);
+                }
+
+                if (noWriteAliasExistsForTemplate) {
+                    String aliasName = request.index();
+                    AliasMetaData aliasMetaData = AliasMetaData.builder(aliasName).writeIndex(true).build();
                     indexMetaDataBuilder.putAlias(aliasMetaData);
                 }
 
@@ -546,13 +588,13 @@ public class MetaDataCreateIndexService {
                     .build();
 
                 logger.info("[{}] creating index, cause [{}], templates {}, shards [{}]/[{}], mappings {}",
-                    request.index(), request.cause(), templateNames, indexMetaData.getNumberOfShards(),
+                    index, request.cause(), templateNames, indexMetaData.getNumberOfShards(),
                     indexMetaData.getNumberOfReplicas(), mappings.keySet());
 
                 ClusterBlocks.Builder blocks = ClusterBlocks.builder().blocks(currentState.blocks());
                 if (!request.blocks().isEmpty()) {
                     for (ClusterBlock block : request.blocks()) {
-                        blocks.addIndexBlock(request.index(), block);
+                        blocks.addIndexBlock(index, block);
                     }
                 }
                 blocks.updateBlocks(indexMetaData);
@@ -560,10 +602,10 @@ public class MetaDataCreateIndexService {
                 ClusterState updatedState = ClusterState.builder(currentState).blocks(blocks).metaData(newMetaData).build();
 
                 RoutingTable.Builder routingTableBuilder = RoutingTable.builder(updatedState.routingTable())
-                    .addAsNew(updatedState.metaData().index(request.index()));
+                    .addAsNew(updatedState.metaData().index(index));
                 updatedState = allocationService.reroute(
                     ClusterState.builder(updatedState).routingTable(routingTableBuilder.build()).build(),
-                    "index [" + request.index() + "] created");
+                    "index [" + index + "] created");
                 removalExtraInfo = "cleaning up after validating index on master";
                 removalReason = IndexRemovalReason.NO_LONGER_ASSIGNED;
                 return updatedState;

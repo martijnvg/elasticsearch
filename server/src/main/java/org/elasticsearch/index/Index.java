@@ -54,6 +54,11 @@ public class Index implements Writeable, ToXContentObject {
         this.uuid = Objects.requireNonNull(uuid);
     }
 
+    public Index(String uuid) {
+        this.name = "__na__";
+        this.uuid = Objects.requireNonNull(uuid);
+    }
+
     /**
      * Read from a stream.
      */
@@ -91,12 +96,12 @@ public class Index implements Writeable, ToXContentObject {
             return false;
         }
         Index index1 = (Index) o;
-        return uuid.equals(index1.uuid) && name.equals(index1.name); // allow for _na_ uuid
+        return uuid.equals(index1.uuid) /*&& name.equals(index1.name)*/; // allow for _na_ uuid
     }
 
     @Override
     public int hashCode() {
-        int result = name.hashCode();
+        int result = 0/*name.hashCode()*/;
         result = 31 * result + uuid.hashCode();
         return result;
     }

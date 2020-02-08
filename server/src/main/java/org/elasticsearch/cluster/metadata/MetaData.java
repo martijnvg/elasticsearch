@@ -623,6 +623,16 @@ public class MetaData implements Iterable<IndexMetaData>, Diffable<MetaData>, To
         return null;
     }
 
+    public IndexMetaData indexFromUUID(String indexUUID) {
+        for (ObjectCursor<IndexMetaData> cursor : indices.values()) {
+            if (indexUUID.equals(cursor.value.getIndexUUID())) {
+                return cursor.value;
+            }
+        }
+
+        return null;
+    }
+
     /** Returns true iff existing index has the same {@link IndexMetaData} instance */
     public boolean hasIndexMetaData(final IndexMetaData indexMetaData) {
         return indices.get(indexMetaData.getIndex().getName()) == indexMetaData;

@@ -445,6 +445,12 @@ public final class ShardRouting implements Writeable, ToXContentObject {
             allocationId, expectedShardSize);
     }
 
+    public ShardRouting renameIndex(String newIndexName) {
+        ShardId newShardId = new ShardId(newIndexName, shardId.getIndex().getUUID(), shardId.getId());
+        return new ShardRouting(newShardId, currentNodeId, relocatingNodeId, primary, state, recoverySource, unassignedInfo,
+            allocationId, expectedShardSize);
+    }
+
     /**
      * returns true if this routing has the same allocation ID as another.
      * <p>

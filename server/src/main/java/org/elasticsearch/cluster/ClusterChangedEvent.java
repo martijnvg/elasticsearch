@@ -259,7 +259,7 @@ public class ClusterChangedEvent {
         List<Index> deleted = null;
         for (ObjectCursor<IndexMetaData> cursor : previousState.metaData().indices().values()) {
             IndexMetaData index = cursor.value;
-            IndexMetaData current = state.metaData().index(index.getIndex());
+            IndexMetaData current = state.metaData().indexFromUUID(index.getIndex().getUUID());
             if (current == null) {
                 if (deleted == null) {
                     deleted = new ArrayList<>();

@@ -22,6 +22,7 @@ package org.elasticsearch.action.admin.indices.refresh;
 import org.elasticsearch.action.support.ActionFilters;
 import org.elasticsearch.action.support.ActiveShardCount;
 import org.elasticsearch.action.support.DefaultShardOperationFailedException;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.action.support.replication.BasicReplicationRequest;
 import org.elasticsearch.action.support.replication.ReplicationResponse;
 import org.elasticsearch.action.support.replication.TransportBroadcastReplicationAction;
@@ -63,5 +64,17 @@ public class TransportRefreshAction
     protected RefreshResponse newResponse(int successfulShards, int failedShards, int totalNumCopies,
                                           List<DefaultShardOperationFailedException> shardFailures) {
         return new RefreshResponse(totalNumCopies, successfulShards, failedShards, shardFailures);
+    }
+
+    @Override
+    protected void rewriteRequest(RefreshRequest request) {
+        request.indicesOptions(toggleIncludeDataStreams(request.indicesOptions()));
+    }
+
+    static IndicesOptions toggleIncludeDataStreams(IndicesOptions options) {
+        return IndicesOptions.fromOptions(
+            options.ignoreUnavailable(), options.allowNoIndices(), options.expandWildcardsOpen(),
+            options.forbidClosedIndices(), options.expandWildcardsHidden(), options.allowAliasesToMultipleIndices(),
+            options.forbidClosedIndices(), options.ignoreAliases(), options.ignoreAliases(), true);
     }
 }

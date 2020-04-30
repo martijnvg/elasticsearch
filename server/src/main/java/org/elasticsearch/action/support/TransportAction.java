@@ -55,6 +55,7 @@ public abstract class TransportAction<Request extends ActionRequest, Response ex
             listener.onFailure(validationException);
             return;
         }
+        rewriteRequest(request);
 
         if (task != null && request.getShouldStoreResult()) {
             listener = new TaskResultStoringActionListener<>(taskManager, task, listener);
@@ -63,6 +64,8 @@ public abstract class TransportAction<Request extends ActionRequest, Response ex
         RequestFilterChain<Request, Response> requestFilterChain = new RequestFilterChain<>(this, logger);
         requestFilterChain.proceed(task, actionName, request, listener);
     }
+
+    protected void rewriteRequest(Request request) {}
 
     protected abstract void doExecute(Task task, Request request, ActionListener<Response> listener);
 

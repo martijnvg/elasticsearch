@@ -61,6 +61,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 import static org.elasticsearch.indices.IndicesOptionsIntegrationIT._flush;
 import static org.elasticsearch.indices.IndicesOptionsIntegrationIT.clearCache;
@@ -105,11 +106,13 @@ public class DataStreamIT extends ESIntegTestCase {
         getDataStreamResponse.getDataStreams().sort(Comparator.comparing(DataStream::getName));
         assertThat(getDataStreamResponse.getDataStreams().size(), equalTo(2));
         assertThat(getDataStreamResponse.getDataStreams().get(0).getName(), equalTo("metrics-bar"));
-        assertThat(getDataStreamResponse.getDataStreams().get(0).getTimeStampField(), equalTo("@timestamp2"));
+        assertThat(getDataStreamResponse.getDataStreams().get(0).getTimeStampField().getFieldName(), equalTo("@timestamp2"));
+        assertThat(getDataStreamResponse.getDataStreams().get(0).getTimeStampField().getFieldMapping(), equalTo("{\"type\":\"date\"}"));
         assertThat(getDataStreamResponse.getDataStreams().get(0).getIndices().size(), equalTo(1));
         assertThat(getDataStreamResponse.getDataStreams().get(0).getIndices().get(0).getName(), equalTo("metrics-bar-000001"));
         assertThat(getDataStreamResponse.getDataStreams().get(1).getName(), equalTo("metrics-foo"));
-        assertThat(getDataStreamResponse.getDataStreams().get(1).getTimeStampField(), equalTo("@timestamp1"));
+        assertThat(getDataStreamResponse.getDataStreams().get(1).getTimeStampField().getFieldName(), equalTo("@timestamp1"));
+        assertThat(getDataStreamResponse.getDataStreams().get(1).getTimeStampField().getFieldMapping(), equalTo("{\"type\":\"date\"}"));
         assertThat(getDataStreamResponse.getDataStreams().get(1).getIndices().size(), equalTo(1));
         assertThat(getDataStreamResponse.getDataStreams().get(1).getIndices().get(0).getName(), equalTo("metrics-foo-000001"));
 
@@ -117,10 +120,14 @@ public class DataStreamIT extends ESIntegTestCase {
             client().admin().indices().getIndex(new GetIndexRequest().indices("metrics-bar-000001")).actionGet();
         assertThat(getIndexResponse.getSettings().get("metrics-bar-000001"), notNullValue());
         assertThat(getIndexResponse.getSettings().get("metrics-bar-000001").getAsBoolean("index.hidden", null), is(true));
+        Map<?, ?> mappings = getIndexResponse.getMappings().get("metrics-bar-000001").getSourceAsMap();
+        assertThat(ObjectPath.eval("properties.@timestamp2.type", mappings), is("date"));
 
         getIndexResponse = client().admin().indices().getIndex(new GetIndexRequest().indices("metrics-foo-000001")).actionGet();
         assertThat(getIndexResponse.getSettings().get("metrics-foo-000001"), notNullValue());
         assertThat(getIndexResponse.getSettings().get("metrics-foo-000001").getAsBoolean("index.hidden", null), is(true));
+        mappings = getIndexResponse.getMappings().get("metrics-foo-000001").getSourceAsMap();
+        assertThat(ObjectPath.eval("properties.@timestamp1.type", mappings), is("date"));
 
         int numDocsBar = randomIntBetween(2, 16);
         indexDocs("metrics-bar", numDocsBar);
@@ -141,10 +148,14 @@ public class DataStreamIT extends ESIntegTestCase {
         getIndexResponse = client().admin().indices().getIndex(new GetIndexRequest().indices("metrics-foo-000002")).actionGet();
         assertThat(getIndexResponse.getSettings().get("metrics-foo-000002"), notNullValue());
         assertThat(getIndexResponse.getSettings().get("metrics-foo-000002").getAsBoolean("index.hidden", null), is(true));
+        mappings = getIndexResponse.getMappings().get("metrics-foo-000002").getSourceAsMap();
+        assertThat(ObjectPath.eval("properties.@timestamp1.type", mappings), is("date"));
 
         getIndexResponse = client().admin().indices().getIndex(new GetIndexRequest().indices("metrics-bar-000002")).actionGet();
         assertThat(getIndexResponse.getSettings().get("metrics-bar-000002"), notNullValue());
         assertThat(getIndexResponse.getSettings().get("metrics-bar-000002").getAsBoolean("index.hidden", null), is(true));
+        mappings = getIndexResponse.getMappings().get("metrics-bar-000002").getSourceAsMap();
+        assertThat(ObjectPath.eval("properties.@timestamp2.type", mappings), is("date"));
 
         int numDocsBar2 = randomIntBetween(2, 16);
         indexDocs("metrics-bar", numDocsBar2);
@@ -255,7 +266,7 @@ public class DataStreamIT extends ESIntegTestCase {
         GetDataStreamAction.Response getDataStreamResponse = client().admin().indices().getDataStreams(getDataStreamRequest).actionGet();
         assertThat(getDataStreamResponse.getDataStreams().size(), equalTo(1));
         assertThat(getDataStreamResponse.getDataStreams().get(0).getName(), equalTo(dataStreamName));
-        assertThat(getDataStreamResponse.getDataStreams().get(0).getTimeStampField(), equalTo("@timestamp"));
+        assertThat(getDataStreamResponse.getDataStreams().get(0).getTimeStampField().getFieldName(), equalTo("@timestamp"));
         assertThat(getDataStreamResponse.getDataStreams().get(0).getIndices().size(), equalTo(1));
         assertThat(getDataStreamResponse.getDataStreams().get(0).getIndices().get(0).getName(), equalTo(dataStreamName + "-000001"));
 

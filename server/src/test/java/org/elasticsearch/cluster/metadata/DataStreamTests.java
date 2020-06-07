@@ -48,7 +48,7 @@ public class DataStreamTests extends AbstractSerializingTestCase<DataStream> {
         long generation = indices.size() + randomLongBetween(1, 128);
         String dataStreamName = randomAlphaOfLength(10).toLowerCase(Locale.ROOT);
         indices.add(new Index(getBackingIndexName(dataStreamName, generation), UUIDs.randomBase64UUID(random())));
-        return new DataStream(dataStreamName, randomAlphaOfLength(10), indices, generation);
+        return new DataStream(dataStreamName, new DataStream.TimestampField(randomAlphaOfLength(10), "{}"), indices, generation);
     }
 
     @Override
@@ -88,7 +88,7 @@ public class DataStreamTests extends AbstractSerializingTestCase<DataStream> {
         for (int k = 1; k <= numBackingIndices; k++) {
             indices.add(new Index(DataStream.getBackingIndexName(dataStreamName, k), UUIDs.randomBase64UUID(random())));
         }
-        DataStream original = new DataStream(dataStreamName, "@timestamp", indices);
+        DataStream original = new DataStream(dataStreamName, new DataStream.TimestampField("@timestamp", "{}"), indices);
         DataStream updated = original.removeBackingIndex(indices.get(indexToRemove - 1));
         assertThat(updated.getName(), equalTo(original.getName()));
         assertThat(updated.getGeneration(), equalTo(original.getGeneration()));

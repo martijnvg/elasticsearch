@@ -31,9 +31,11 @@ import org.elasticsearch.cluster.ack.ClusterStateUpdateRequest;
 import org.elasticsearch.cluster.ack.ClusterStateUpdateResponse;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.Priority;
+import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.ObjectPath;
+import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.index.mapper.DateFieldMapper;
 import org.elasticsearch.threadpool.ThreadPool;
 
@@ -144,8 +146,18 @@ public class MetadataCreateDataStreamService {
         IndexMetadata firstBackingIndex = currentState.metadata().index(firstBackingIndexName);
         assert firstBackingIndex != null;
 
-        Metadata.Builder builder = Metadata.builder(currentState.metadata()).put(
-            new DataStream(request.name, template.getDataStreamTemplate().getTimestampField(), List.of(firstBackingIndex.getIndex())));
+        assert firstBackingIndex.mapping() != null : "no mapping found for backing index [" + firstBackingIndexName + "]";
+        Map<?, ?> mapping = firstBackingIndex.mapping().getSourceAsMap();
+        String fieldName = template.getDataStreamTemplate().getTimestampField();
+        Map<String, ?> timeStampFieldMapping = getTimestampFieldMapper(fieldName, mapping);
+        assert timeStampFieldMapping != null : "no timestamp_field mapping found for backing index [" + firstBackingIndexName + "]";
+
+        DataStream.TimestampField timestampField = new DataStream.TimestampField(
+            fieldName,
+            Strings.toString(XContentFactory.jsonBuilder().map(timeStampFieldMapping))
+        );
+        DataStream newDataStream = new DataStream(request.name, timestampField, List.of(firstBackingIndex.getIndex()));
+        Metadata.Builder builder = Metadata.builder(currentState.metadata()).put(newDataStream);
         logger.info("adding data stream [{}]", request.name);
         return ClusterState.builder(currentState).metadata(builder).build();
     }
@@ -167,8 +179,7 @@ public class MetadataCreateDataStreamService {
         new LinkedHashSet<>(List.of(DateFieldMapper.CONTENT_TYPE, DateFieldMapper.DATE_NANOS_CONTENT_TYPE));
 
     public static void validateTimestampFieldMapping(String timestampFieldName, Map<?, ?> mapping) {
-        String timestampFieldMapperPath = "properties." + timestampFieldName;
-        Map<?, ?> timestampFieldMapper = ObjectPath.eval(timestampFieldMapperPath, mapping);
+        Map<?, ?> timestampFieldMapper = getTimestampFieldMapper(timestampFieldName, mapping);
         if (timestampFieldMapper == null) {
             throw new IllegalArgumentException("expected timestamp field [" + timestampFieldName + "], but found no timestamp field");
         }
@@ -177,6 +188,11 @@ public class MetadataCreateDataStreamService {
             throw new IllegalArgumentException("expected timestamp field [" + timestampFieldName + "] to be of types [" +
                 ALLOWED_TIMESTAMPFIELD_TYPES + "], but instead found type [" + type  + "]");
         }
+    }
+
+    private static Map<String, ?> getTimestampFieldMapper(String timestampFieldName, Map<?, ?> mapping) {
+        String timestampFieldMapperPath = "properties." + timestampFieldName;
+        return ObjectPath.eval(timestampFieldMapperPath, mapping);
     }
 
 }

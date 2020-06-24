@@ -243,7 +243,7 @@ public final class DateFieldMapper extends FieldMapper {
         protected DateFieldType setupFieldType(BuilderContext context) {
             String pattern = this.format.value();
             DateFormatter dateTimeFormatter = DateFormatter.forPattern(pattern).withLocale(locale);
-            return new DateFieldType(buildFullName(context), indexed, hasDocValues, dateTimeFormatter, resolution, meta);
+            return new DateFieldType(buildFullName(context), indexed, hasDocValues, dateTimeFormatter, resolution, meta, isSingleton());
         }
 
         @Override
@@ -301,8 +301,8 @@ public final class DateFieldMapper extends FieldMapper {
         protected final Resolution resolution;
 
         public DateFieldType(String name, boolean isSearchable, boolean hasDocValues,
-                             DateFormatter dateTimeFormatter, Resolution resolution, Map<String, String> meta) {
-            super(name, isSearchable, hasDocValues, TextSearchInfo.SIMPLE_MATCH_ONLY, meta);
+                             DateFormatter dateTimeFormatter, Resolution resolution, Map<String, String> meta, boolean singleton) {
+            super(name, isSearchable, hasDocValues, TextSearchInfo.SIMPLE_MATCH_ONLY, meta, singleton);
             this.dateTimeFormatter = dateTimeFormatter;
             this.dateMathParser = dateTimeFormatter.toDateMathParser();
             this.resolution = resolution;
@@ -310,7 +310,7 @@ public final class DateFieldMapper extends FieldMapper {
         }
 
         public DateFieldType(String name) {
-            this(name, true, true, DEFAULT_DATE_TIME_FORMATTER, Resolution.MILLISECONDS, Collections.emptyMap());
+            this(name, true, true, DEFAULT_DATE_TIME_FORMATTER, Resolution.MILLISECONDS, Collections.emptyMap(), false);
         }
 
         DateFieldType(DateFieldType other) {

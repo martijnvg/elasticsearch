@@ -285,6 +285,11 @@ public abstract class ParseContext implements Iterable<ParseContext.Document>{
         public Collection<String> getIgnoredFields() {
             return in.getIgnoredFields();
         }
+
+        @Override
+        public void checkSingletonUsage(String name) {
+            in.checkSingletonUsage(name);
+        }
     }
 
     public static class InternalParseContext extends ParseContext {
@@ -441,6 +446,15 @@ public abstract class ParseContext implements Iterable<ParseContext.Document>{
         }
 
         void postParse() {
+            for (MappedFieldType fieldType : mapperService().fieldTypes()) {
+                if (fieldType.isSingleton()) {
+                    for (Document document : documents) {
+                        if (document.getField(fieldType.name()) == null) {
+                            throw new IllegalArgumentException("singleton field [" + fieldType.name() + "] is missing");
+                        }
+                    }
+                }
+            }
             if (documents.size() > 1) {
                 docsReversed = true;
                 // We preserve the order of the children while ensuring that parents appear after them.
@@ -481,6 +495,15 @@ public abstract class ParseContext implements Iterable<ParseContext.Document>{
         @Override
         public Collection<String> getIgnoredFields() {
             return Collections.unmodifiableCollection(ignoredFields);
+        }
+
+        private Set<String> seenFields = new HashSet<>();
+
+        @Override
+        public void checkSingletonUsage(String name) {
+            if (seenFields.add(name) == false) {
+                throw new IllegalArgumentException("singleton field [" + name + "] encountered multiple values");
+            }
         }
     }
 
@@ -646,4 +669,6 @@ public abstract class ParseContext implements Iterable<ParseContext.Document>{
      * Get dynamic mappers created while parsing.
      */
     public abstract List<Mapper> getDynamicMappers();
+
+    public abstract void checkSingletonUsage(String name);
 }

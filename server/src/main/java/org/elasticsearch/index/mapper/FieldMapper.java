@@ -71,6 +71,7 @@ public abstract class FieldMapper extends Mapper implements Cloneable {
         protected NamedAnalyzer searchAnalyzer;
         protected NamedAnalyzer searchQuoteAnalyzer;
         protected SimilarityProvider similarity;
+        private boolean singleton;
 
         protected Builder(String name, FieldType fieldType) {
             super(name);
@@ -179,6 +180,15 @@ public abstract class FieldMapper extends Mapper implements Cloneable {
             return builder;
         }
 
+        public boolean isSingleton() {
+            return singleton;
+        }
+
+        public T singleton(boolean singleton) {
+            this.singleton = singleton;
+            return builder;
+        }
+
         protected String buildFullName(BuilderContext context) {
             return context.path().pathAsText(name);
         }
@@ -244,6 +254,9 @@ public abstract class FieldMapper extends Mapper implements Cloneable {
      */
     public void parse(ParseContext context) throws IOException {
         try {
+            if (fieldType().isSingleton()) {
+                context.checkSingletonUsage(name());
+            }
             parseCreateField(context);
         } catch (Exception e) {
             String valuePreview = "";
@@ -434,6 +447,9 @@ public abstract class FieldMapper extends Mapper implements Cloneable {
 
         if (includeDefaults || fieldType().meta().isEmpty() == false) {
             builder.field("meta", new TreeMap<>(fieldType().meta())); // ensure consistent order
+        }
+        if (includeDefaults || fieldType().isSingleton()) {
+            builder.field("singleton", fieldType().isSingleton());
         }
     }
 

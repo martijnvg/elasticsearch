@@ -34,7 +34,7 @@ public abstract class SimpleMappedFieldType extends MappedFieldType {
 
     protected SimpleMappedFieldType(String name, boolean isSearchable, boolean hasDocValues,
                                     TextSearchInfo textSearchInfo, Map<String, String> meta) {
-        super(name, isSearchable, hasDocValues, textSearchInfo, meta);
+        super(name, isSearchable, hasDocValues, textSearchInfo, meta, false);
     }
 
     protected SimpleMappedFieldType(MappedFieldType ref) {

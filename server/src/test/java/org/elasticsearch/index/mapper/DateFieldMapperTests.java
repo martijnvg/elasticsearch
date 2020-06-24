@@ -25,7 +25,9 @@ import org.elasticsearch.bootstrap.JavaVersion;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.compress.CompressedXContent;
+import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.time.DateFormatter;
+import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.IndexService;
@@ -45,6 +47,7 @@ import java.util.Locale;
 import java.util.Set;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 
 public class DateFieldMapperTests extends FieldMapperTestCase<DateFieldMapper.Builder> {
@@ -462,6 +465,52 @@ public class DateFieldMapperTests extends FieldMapperTestCase<DateFieldMapper.Bu
         mapper = indexService.mapperService().merge("_doc",
                 new CompressedXContent(mapping3), MergeReason.MAPPING_UPDATE);
         assertEquals(mapping3, mapper.mappingSource().toString());
+    }
+
+    public void testSingleton() throws Exception {
+        XContentBuilder mapping = XContentFactory.jsonBuilder().startObject()
+            .startObject("properties").startObject("@timestamp").field("type", "date").field("singleton", true).endObject().endObject()
+            .endObject();
+
+        indexService = createIndex("foobar", Settings.EMPTY, mapping);
+        parser = indexService.mapperService().documentMapperParser();
+
+        DocumentMapper mapper = indexService.mapperService().documentMapper();
+        assertThat(mapper.mappingSource().toString(), equalTo("{\"_doc\":" + Strings.toString(mapping) + "}"));
+
+        ParsedDocument doc = mapper.parse(new SourceToParse("foobar", "1", BytesReference
+            .bytes(XContentFactory.jsonBuilder()
+                .startObject()
+                .field("@timestamp", "2020-12-12")
+                .endObject()),
+            XContentType.JSON));
+        assertThat(doc.rootDoc().getField("@timestamp"), notNullValue());
+
+        Exception e = expectThrows(IllegalArgumentException.class, () -> mapper.parse(new SourceToParse("test", "1", BytesReference
+            .bytes(XContentFactory.jsonBuilder()
+                .startObject()
+                .endObject()),
+            XContentType.JSON)));
+        assertThat(e.getMessage(), equalTo("singleton field [@timestamp] is missing"));
+
+        e = expectThrows(IllegalArgumentException.class, () -> mapper.parse(new SourceToParse("test", "1", BytesReference
+            .bytes(XContentFactory.jsonBuilder()
+                .startObject()
+                .field("@timestamp_2", "2020-12-12")
+                .endObject()),
+            XContentType.JSON)));
+        assertThat(e.getMessage(), equalTo("singleton field [@timestamp] is missing"));
+
+        e = expectThrows(MapperParsingException.class, () -> mapper.parse(new SourceToParse("test", "1", BytesReference
+            .bytes(XContentFactory.jsonBuilder()
+                .startObject()
+                .startArray("@timestamp")
+                .value("2020-12-12")
+                .value("2020-12-13")
+                .endArray()
+                .endObject()),
+            XContentType.JSON)));
+        assertThat(e.getCause().getMessage(), equalTo("singleton field [@timestamp] encountered multiple values"));
     }
 
 }

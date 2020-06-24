@@ -261,6 +261,9 @@ public class TypeParsers {
                     parseCopyFields(propNode, builder);
                 }
                 iterator.remove();
+            } else if (propName.equals("singleton")) {
+                builder.singleton(XContentMapValues.nodeBooleanValue(propNode, "singleton"));
+                iterator.remove();
             }
         }
     }

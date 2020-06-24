@@ -244,7 +244,8 @@ public class RangeFieldTypeTests extends FieldTypeTestCase<RangeFieldType> {
 
         // compare lower and upper bounds with what we would get on a `date` field
         DateFieldType dateFieldType
-            = new DateFieldType(FIELDNAME, true, true, formatter, DateFieldMapper.Resolution.MILLISECONDS, Collections.emptyMap());
+            = new DateFieldType(FIELDNAME, true, true, formatter, DateFieldMapper.Resolution.MILLISECONDS,
+            Collections.emptyMap(), false);
         final Query queryOnDateField = dateFieldType.rangeQuery(from, to, true, true, relation, null, null, context);
         assertEquals("field:[1465975790000 TO 1466062190999]", queryOnDateField.toString());
     }

@@ -71,6 +71,7 @@ public abstract class MappedFieldType {
     private SimilarityProvider similarity;
     private boolean eagerGlobalOrdinals;
     private Map<String, String> meta;
+    private final boolean singleton;
 
     protected MappedFieldType(MappedFieldType ref) {
         this.name = ref.name();
@@ -84,15 +85,18 @@ public abstract class MappedFieldType {
         this.eagerGlobalOrdinals = ref.eagerGlobalOrdinals;
         this.meta = ref.meta;
         this.textSearchInfo = ref.textSearchInfo;
+        this.singleton = ref.singleton;
     }
 
-    public MappedFieldType(String name, boolean isIndexed, boolean hasDocValues, TextSearchInfo textSearchInfo, Map<String, String> meta) {
+    public MappedFieldType(String name, boolean isIndexed, boolean hasDocValues, TextSearchInfo textSearchInfo, Map<String, String> meta,
+                           boolean singleton) {
         setBoost(1.0f);
         this.name = Objects.requireNonNull(name);
         this.isIndexed = isIndexed;
         this.docValues = hasDocValues;
         this.textSearchInfo = Objects.requireNonNull(textSearchInfo);
         this.meta = meta;
+        this.singleton = singleton;
     }
 
     @Override
@@ -419,5 +423,9 @@ public abstract class MappedFieldType {
      */
     public TextSearchInfo getTextSearchInfo() {
         return textSearchInfo;
+    }
+
+    public boolean isSingleton() {
+        return singleton;
     }
 }

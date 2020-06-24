@@ -64,7 +64,7 @@ public class DateFieldTypeTests extends FieldTypeTestCase<DateFieldType> {
     @Override
     protected DateFieldType createDefaultFieldType(String name, Map<String, String> meta) {
         return new DateFieldType(name, true, true, DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER,
-            Resolution.MILLISECONDS, meta);
+            Resolution.MILLISECONDS, meta, false);
     }
 
     private static final long nowInMillis = 0;
@@ -80,13 +80,13 @@ public class DateFieldTypeTests extends FieldTypeTestCase<DateFieldType> {
 
     public void testIsFieldWithinQueryDateMillis() throws IOException {
         DateFieldType ft = new DateFieldType("my_date", true, true,
-            DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER, Resolution.MILLISECONDS, Collections.emptyMap());
+            DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER, Resolution.MILLISECONDS, Collections.emptyMap(), false);
         isFieldWithinRangeTestCase(ft);
     }
 
     public void testIsFieldWithinQueryDateNanos() throws IOException {
         DateFieldType ft = new DateFieldType("my_date", true, true,
-            DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER, Resolution.NANOSECONDS, Collections.emptyMap());
+            DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER, Resolution.NANOSECONDS, Collections.emptyMap(), false);
         isFieldWithinRangeTestCase(ft);
     }
 
@@ -223,7 +223,7 @@ public class DateFieldTypeTests extends FieldTypeTestCase<DateFieldType> {
         assertEquals(expected, ft.termQuery(date, context));
 
         MappedFieldType unsearchable = new DateFieldType("field", false, true, DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER,
-            Resolution.MILLISECONDS, Collections.emptyMap());
+            Resolution.MILLISECONDS, Collections.emptyMap(), false);
         IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
                 () -> unsearchable.termQuery(date, context));
         assertEquals("Cannot search on field [field] since it is not indexed.", e.getMessage());
@@ -258,7 +258,7 @@ public class DateFieldTypeTests extends FieldTypeTestCase<DateFieldType> {
             ft.rangeQuery("now", instant2, true, true, null, null, null, context));
 
         MappedFieldType unsearchable = new DateFieldType("field", false, true, DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER,
-            Resolution.MILLISECONDS, Collections.emptyMap());
+            Resolution.MILLISECONDS, Collections.emptyMap(), false);
         IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
                 () -> unsearchable.rangeQuery(date1, date2, true, true, null, null, null, context));
         assertEquals("Cannot search on field [field] since it is not indexed.", e.getMessage());

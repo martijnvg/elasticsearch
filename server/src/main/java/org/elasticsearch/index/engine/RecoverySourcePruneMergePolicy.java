@@ -21,7 +21,6 @@ package org.elasticsearch.index.engine;
 
 import org.apache.lucene.codecs.DocValuesProducer;
 import org.apache.lucene.codecs.StoredFieldsReader;
-import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.index.CodecReader;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.FilterCodecReader;
@@ -29,9 +28,6 @@ import org.apache.lucene.index.FilterNumericDocValues;
 import org.apache.lucene.index.MergePolicy;
 import org.apache.lucene.index.NumericDocValues;
 import org.apache.lucene.index.OneMergeWrappingMergePolicy;
-import org.apache.lucene.index.SortedDocValues;
-import org.apache.lucene.index.SortedNumericDocValues;
-import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.search.ConjunctionDISI;
 import org.apache.lucene.search.DocIdSetIterator;
@@ -164,129 +160,6 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
             return null;
         }
 
-        private static class FilterDocValuesProducer extends DocValuesProducer {
-            private final DocValuesProducer in;
-
-            FilterDocValuesProducer(DocValuesProducer in) {
-                this.in = in;
-            }
-
-            @Override
-            public NumericDocValues getNumeric(FieldInfo field) throws IOException {
-                return in.getNumeric(field);
-            }
-
-            @Override
-            public BinaryDocValues getBinary(FieldInfo field) throws IOException {
-                return in.getBinary(field);
-            }
-
-            @Override
-            public SortedDocValues getSorted(FieldInfo field) throws IOException {
-                return in.getSorted(field);
-            }
-
-            @Override
-            public SortedNumericDocValues getSortedNumeric(FieldInfo field) throws IOException {
-                return in.getSortedNumeric(field);
-            }
-
-            @Override
-            public SortedSetDocValues getSortedSet(FieldInfo field) throws IOException {
-                return in.getSortedSet(field);
-            }
-
-            @Override
-            public void checkIntegrity() throws IOException {
-                in.checkIntegrity();
-            }
-
-            @Override
-            public void close() throws IOException {
-                in.close();
-            }
-
-            @Override
-            public long ramBytesUsed() {
-                return in.ramBytesUsed();
-            }
-        }
-
-        private static class FilterStoredFieldsReader extends StoredFieldsReader {
-
-            private final StoredFieldsReader fieldsReader;
-
-            FilterStoredFieldsReader(StoredFieldsReader fieldsReader) {
-                this.fieldsReader = fieldsReader;
-            }
-
-            @Override
-            public long ramBytesUsed() {
-                return fieldsReader.ramBytesUsed();
-            }
-
-            @Override
-            public void close() throws IOException {
-                fieldsReader.close();
-            }
-
-            @Override
-            public void visitDocument(int docID, StoredFieldVisitor visitor) throws IOException {
-                fieldsReader.visitDocument(docID, visitor);
-            }
-
-            @Override
-            public StoredFieldsReader clone() {
-                return fieldsReader.clone();
-            }
-
-            @Override
-            public void checkIntegrity() throws IOException {
-                fieldsReader.checkIntegrity();
-            }
-        }
-
-        private static class FilterStoredFieldVisitor extends StoredFieldVisitor {
-            private final StoredFieldVisitor visitor;
-
-            FilterStoredFieldVisitor(StoredFieldVisitor visitor) {
-                this.visitor = visitor;
-            }
-
-            @Override
-            public void binaryField(FieldInfo fieldInfo, byte[] value) throws IOException {
-                visitor.binaryField(fieldInfo, value);
-            }
-
-            @Override
-            public void stringField(FieldInfo fieldInfo, byte[] value) throws IOException {
-                visitor.stringField(fieldInfo, value);
-            }
-
-            @Override
-            public void intField(FieldInfo fieldInfo, int value) throws IOException {
-                visitor.intField(fieldInfo, value);
-            }
-
-            @Override
-            public void longField(FieldInfo fieldInfo, long value) throws IOException {
-                visitor.longField(fieldInfo, value);
-            }
-
-            @Override
-            public void floatField(FieldInfo fieldInfo, float value) throws IOException {
-                visitor.floatField(fieldInfo, value);
-            }
-
-            @Override
-            public void doubleField(FieldInfo fieldInfo, double value) throws IOException {
-                visitor.doubleField(fieldInfo, value);
-            }
-
-            @Override
-            public Status needsField(FieldInfo fieldInfo) throws IOException {
-                return visitor.needsField(fieldInfo);
-            }
-        }
     }
+
 }

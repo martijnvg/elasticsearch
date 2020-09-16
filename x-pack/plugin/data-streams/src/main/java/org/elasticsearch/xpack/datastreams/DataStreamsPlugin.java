@@ -5,8 +5,14 @@
  */
 package org.elasticsearch.xpack.datastreams;
 
+import org.apache.lucene.index.FilterMergePolicy;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionResponse;
+import org.elasticsearch.cluster.metadata.DataStream;
+import org.elasticsearch.index.IndexSettings;
+import org.elasticsearch.index.engine.Engine;
+import org.elasticsearch.index.engine.EngineFactory;
+import org.elasticsearch.plugins.EnginePlugin;
 import org.elasticsearch.xpack.core.action.CreateDataStreamAction;
 import org.elasticsearch.xpack.core.action.DataStreamsStatsAction;
 import org.elasticsearch.xpack.core.action.DeleteDataStreamAction;
@@ -39,9 +45,11 @@ import org.elasticsearch.xpack.datastreams.mapper.DataStreamTimestampFieldMapper
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
-public class DataStreamsPlugin extends Plugin implements ActionPlugin, MapperPlugin {
+public class DataStreamsPlugin extends Plugin implements ActionPlugin, MapperPlugin, EnginePlugin {
 
     @Override
     public Map<String, MetadataFieldMapper.TypeParser> getMetadataMappers() {
@@ -74,5 +82,22 @@ public class DataStreamsPlugin extends Plugin implements ActionPlugin, MapperPlu
         var getDsAction = new RestGetDataStreamsAction();
         var dsStatsAction = new RestDataStreamsStatsAction();
         return List.of(createDsAction, deleteDsAction, getDsAction, dsStatsAction);
+    }
+
+    @Override
+    public Optional<EngineFactory> getEngineFactory(IndexSettings indexSettings) {
+        return Optional.empty();
+    }
+
+    @Override
+    public BiFunction<FilterMergePolicy, Engine, FilterMergePolicy> getMergePolicyDecorator() {
+        return (in, engine) -> {
+            // Check differently whether an index is a backing index:
+            if (engine.config().getShardId().getIndex().getName().startsWith(DataStream.BACKING_INDEX_PREFIX)) {
+                return new PruneFieldsMergePolicy(in, engine::getMinRetainedSeqNo);
+            } else {
+                return in;
+            }
+        };
     }
 }

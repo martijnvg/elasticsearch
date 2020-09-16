@@ -26,7 +26,7 @@ import org.apache.lucene.util.Accountable;
 import java.io.IOException;
 import java.util.Collection;
 
-abstract class FilteredPointsReader extends PointsReader {
+public abstract class FilteredPointsReader extends PointsReader {
 
     private final PointsReader in;
 

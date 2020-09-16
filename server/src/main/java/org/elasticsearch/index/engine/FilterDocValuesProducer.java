@@ -29,7 +29,7 @@ import org.apache.lucene.index.SortedSetDocValues;
 
 import java.io.IOException;
 
-abstract class FilterDocValuesProducer extends DocValuesProducer {
+public abstract class FilterDocValuesProducer extends DocValuesProducer {
     private final DocValuesProducer in;
 
     protected FilterDocValuesProducer(DocValuesProducer in) {

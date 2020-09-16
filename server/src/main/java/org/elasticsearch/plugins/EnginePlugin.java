@@ -19,10 +19,13 @@
 
 package org.elasticsearch.plugins;
 
+import org.apache.lucene.index.FilterMergePolicy;
 import org.elasticsearch.index.IndexSettings;
+import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.engine.EngineFactory;
 
 import java.util.Optional;
+import java.util.function.BiFunction;
 
 /**
  * A plugin that provides alternative engine implementations.
@@ -38,5 +41,10 @@ public interface EnginePlugin {
      * @return an optional engine factory
      */
     Optional<EngineFactory> getEngineFactory(IndexSettings indexSettings);
+
+    // Maybe this should be in its own plugin class?
+    default BiFunction<FilterMergePolicy, Engine, FilterMergePolicy> getMergePolicyDecorator() {
+        return (filterMergePolicy, engine) -> filterMergePolicy;
+    }
 
 }

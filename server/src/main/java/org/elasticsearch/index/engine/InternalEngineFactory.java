@@ -19,9 +19,26 @@
 
 package org.elasticsearch.index.engine;
 
+import org.apache.lucene.index.FilterMergePolicy;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.function.BiFunction;
+
 public class InternalEngineFactory implements EngineFactory {
+
+    private final Collection<BiFunction<FilterMergePolicy, Engine, FilterMergePolicy>> mergePolicyDecorators;
+
+    public InternalEngineFactory() {
+        this(List.of());
+    }
+
+    public InternalEngineFactory(Collection<BiFunction<FilterMergePolicy, Engine, FilterMergePolicy>> mergePolicyDecorators) {
+        this.mergePolicyDecorators = mergePolicyDecorators;
+    }
+
     @Override
     public Engine newReadWriteEngine(EngineConfig config) {
-        return new InternalEngine(config);
+        return new InternalEngine(config, mergePolicyDecorators);
     }
 }

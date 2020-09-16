@@ -24,7 +24,7 @@ import org.apache.lucene.index.StoredFieldVisitor;
 
 import java.io.IOException;
 
-abstract class FilterStoredFieldVisitor extends StoredFieldVisitor {
+public abstract class FilterStoredFieldVisitor extends StoredFieldVisitor {
     private final StoredFieldVisitor visitor;
 
     protected FilterStoredFieldVisitor(StoredFieldVisitor visitor) {

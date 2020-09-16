@@ -27,7 +27,7 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Iterator;
 
-abstract class FilterFieldsProducer extends FieldsProducer {
+public abstract class FilterFieldsProducer extends FieldsProducer {
 
     private final FieldsProducer in;
 

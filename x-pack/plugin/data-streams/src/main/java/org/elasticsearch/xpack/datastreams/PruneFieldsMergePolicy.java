@@ -1,23 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License;
+ * you may not use this file except in compliance with the Elastic License.
  */
-
-package org.elasticsearch.index.engine;
+package org.elasticsearch.xpack.datastreams;
 
 import org.apache.lucene.codecs.DocValuesProducer;
 import org.apache.lucene.codecs.FieldsProducer;
@@ -36,6 +22,11 @@ import org.apache.lucene.index.PointValues;
 import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.util.FilterIterator;
+import org.elasticsearch.index.engine.FilterDocValuesProducer;
+import org.elasticsearch.index.engine.FilterFieldsProducer;
+import org.elasticsearch.index.engine.FilterStoredFieldVisitor;
+import org.elasticsearch.index.engine.FilterStoredFieldsReader;
+import org.elasticsearch.index.engine.FilteredPointsReader;
 import org.elasticsearch.index.mapper.IdFieldMapper;
 import org.elasticsearch.index.mapper.SeqNoFieldMapper;
 
@@ -51,8 +42,11 @@ import java.util.stream.StreamSupport;
  */
 public final class PruneFieldsMergePolicy extends OneMergeWrappingMergePolicy {
 
-    private final static Set<String> FIELDS_TO_PRUNE =
-        Set.of(IdFieldMapper.NAME, SeqNoFieldMapper.NAME, SeqNoFieldMapper.PRIMARY_TERM_NAME);
+    private static final Set<String> FIELDS_TO_PRUNE = Set.of(
+        IdFieldMapper.NAME,
+        SeqNoFieldMapper.NAME,
+        SeqNoFieldMapper.PRIMARY_TERM_NAME
+    );
 
     public PruneFieldsMergePolicy(MergePolicy in, LongSupplier minRetainedSeqNoSupplier) {
         super(in, toWrap -> new OneMerge(toWrap.segments) {
@@ -126,7 +120,7 @@ public final class PruneFieldsMergePolicy extends OneMergeWrappingMergePolicy {
 
             @Override
             public PointsReader getPointsReader() {
-                PointsReader pointsReader =  super.getPointsReader();
+                PointsReader pointsReader = super.getPointsReader();
                 return new FilteredPointsReader(pointsReader) {
                     @Override
                     public PointValues getValues(String field) throws IOException {
@@ -142,7 +136,7 @@ public final class PruneFieldsMergePolicy extends OneMergeWrappingMergePolicy {
 
             @Override
             public FieldsProducer getPostingsReader() {
-                FieldsProducer fieldsProducer =  super.getPostingsReader();
+                FieldsProducer fieldsProducer = super.getPostingsReader();
                 return new FilterFieldsProducer(fieldsProducer) {
 
                     @Override

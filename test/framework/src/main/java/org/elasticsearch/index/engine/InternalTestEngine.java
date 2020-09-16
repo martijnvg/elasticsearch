@@ -24,6 +24,7 @@ import org.elasticsearch.index.seqno.LocalCheckpointTracker;
 import org.elasticsearch.index.seqno.SequenceNumbers;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 
@@ -38,7 +39,7 @@ class InternalTestEngine extends InternalEngine {
     }
 
     InternalTestEngine(EngineConfig engineConfig, BiFunction<Long, Long, LocalCheckpointTracker> localCheckpointTrackerSupplier) {
-        super(engineConfig, localCheckpointTrackerSupplier);
+        super(engineConfig, localCheckpointTrackerSupplier, List.of());
     }
 
     @Override

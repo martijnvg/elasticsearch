@@ -24,6 +24,7 @@ import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.FilterMergePolicy;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
@@ -54,7 +55,6 @@ import org.apache.lucene.util.InfoStream;
 import org.elasticsearch.Assertions;
 import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.action.index.IndexRequest;
-import org.elasticsearch.cluster.metadata.DataStream;
 import org.elasticsearch.common.Booleans;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.SuppressForbidden;
@@ -99,6 +99,7 @@ import org.elasticsearch.threadpool.ThreadPool;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -185,14 +186,23 @@ public class InternalEngine extends Engine {
     @Nullable
     private volatile String forceMergeUUID;
 
+    private final Collection<BiFunction<FilterMergePolicy, Engine, FilterMergePolicy>> mergePolicyDecorators;
+
     public InternalEngine(EngineConfig engineConfig) {
-        this(engineConfig, LocalCheckpointTracker::new);
+        this(engineConfig, List.of());
+    }
+
+    public InternalEngine(EngineConfig engineConfig,
+                          Collection<BiFunction<FilterMergePolicy, Engine, FilterMergePolicy>> mergePolicyDecorators) {
+        this(engineConfig, LocalCheckpointTracker::new, mergePolicyDecorators);
     }
 
     InternalEngine(
-            final EngineConfig engineConfig,
-            final BiFunction<Long, Long, LocalCheckpointTracker> localCheckpointTrackerSupplier) {
+        final EngineConfig engineConfig,
+        final BiFunction<Long, Long, LocalCheckpointTracker> localCheckpointTrackerSupplier,
+        Collection<BiFunction<FilterMergePolicy, Engine, FilterMergePolicy>> mergePolicyDecorators) {
         super(engineConfig);
+        this.mergePolicyDecorators = mergePolicyDecorators;
         final TranslogDeletionPolicy translogDeletionPolicy = new TranslogDeletionPolicy();
         store.incRef();
         IndexWriter writer = null;
@@ -2112,11 +2122,11 @@ public class InternalEngine extends Engine {
 
         mergePolicy = new PrunePostingsMergePolicy(mergePolicy, IdFieldMapper.NAME);
         mergePolicy = new SoftDeletesRetentionMergePolicy(Lucene.SOFT_DELETES_FIELD, softDeletesPolicy::getRetentionQuery, mergePolicy);
-        mergePolicy = new RecoverySourcePruneMergePolicy(SourceFieldMapper.RECOVERY_SOURCE_NAME, softDeletesPolicy::getRetentionQuery, mergePolicy);
+        mergePolicy =
+            new RecoverySourcePruneMergePolicy(SourceFieldMapper.RECOVERY_SOURCE_NAME, softDeletesPolicy::getRetentionQuery, mergePolicy);
 
-        // Check differently whether an index is a backing index:
-        if (engineConfig.getShardId().getIndex().getName().startsWith(DataStream.BACKING_INDEX_PREFIX)) {
-            mergePolicy = new PruneFieldsMergePolicy(mergePolicy, softDeletesPolicy::getMinRetainedSeqNo);
+        for (BiFunction<FilterMergePolicy, Engine, FilterMergePolicy> mergePolicyDecorator : mergePolicyDecorators) {
+            mergePolicy = mergePolicyDecorator.apply((FilterMergePolicy) mergePolicy, this);
         }
 
         boolean shuffleForcedMerge = Booleans.parseBoolean(System.getProperty("es.shuffle_forced_merge", Boolean.TRUE.toString()));

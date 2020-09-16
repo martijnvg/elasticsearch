@@ -24,7 +24,7 @@ import org.apache.lucene.index.StoredFieldVisitor;
 
 import java.io.IOException;
 
-abstract class FilterStoredFieldsReader extends StoredFieldsReader {
+public abstract class FilterStoredFieldsReader extends StoredFieldsReader {
 
     private final StoredFieldsReader fieldsReader;
 

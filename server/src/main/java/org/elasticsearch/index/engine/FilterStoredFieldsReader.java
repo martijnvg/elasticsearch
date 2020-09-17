@@ -26,34 +26,31 @@ import java.io.IOException;
 
 public abstract class FilterStoredFieldsReader extends StoredFieldsReader {
 
-    private final StoredFieldsReader fieldsReader;
+    protected final StoredFieldsReader in;
 
-    protected FilterStoredFieldsReader(StoredFieldsReader fieldsReader) {
-        this.fieldsReader = fieldsReader;
+    protected FilterStoredFieldsReader(StoredFieldsReader in) {
+        this.in = in;
     }
 
     @Override
     public long ramBytesUsed() {
-        return fieldsReader.ramBytesUsed();
+        return in.ramBytesUsed();
     }
 
     @Override
     public void close() throws IOException {
-        fieldsReader.close();
+        in.close();
     }
 
     @Override
     public void visitDocument(int docID, StoredFieldVisitor visitor) throws IOException {
-        fieldsReader.visitDocument(docID, visitor);
+        in.visitDocument(docID, visitor);
     }
 
-    @Override
-    public StoredFieldsReader clone() {
-        return fieldsReader.clone();
-    }
+    public abstract StoredFieldsReader clone();
 
     @Override
     public void checkIntegrity() throws IOException {
-        fieldsReader.checkIntegrity();
+        in.checkIntegrity();
     }
 }

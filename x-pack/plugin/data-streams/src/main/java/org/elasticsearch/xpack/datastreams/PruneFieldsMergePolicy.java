@@ -85,21 +85,7 @@ public final class PruneFieldsMergePolicy extends OneMergeWrappingMergePolicy {
 
             @Override
             public StoredFieldsReader getFieldsReader() {
-                StoredFieldsReader fieldsReader = super.getFieldsReader();
-                return new FilterStoredFieldsReader(fieldsReader) {
-                    @Override
-                    public void visitDocument(int docID, StoredFieldVisitor visitor) throws IOException {
-                        super.visitDocument(docID, new FilterStoredFieldVisitor(visitor) {
-                            @Override
-                            public Status needsField(FieldInfo fieldInfo) throws IOException {
-                                if (FIELDS_TO_PRUNE.contains(fieldInfo.name)) {
-                                    return Status.NO;
-                                }
-                                return super.needsField(fieldInfo);
-                            }
-                        });
-                    }
-                };
+                return new PruneFieldsStoredFieldsReader(super.getFieldsReader());
             }
 
             @Override
@@ -175,5 +161,35 @@ public final class PruneFieldsMergePolicy extends OneMergeWrappingMergePolicy {
                 return null;
             }
         };
+    }
+
+    static class PruneFieldsStoredFieldsReader extends FilterStoredFieldsReader {
+
+        public PruneFieldsStoredFieldsReader(StoredFieldsReader in) {
+            super(in);
+        }
+
+        @Override
+        public void visitDocument(int docID, StoredFieldVisitor visitor) throws IOException {
+            super.visitDocument(docID, new FilterStoredFieldVisitor(visitor) {
+                @Override
+                public Status needsField(FieldInfo fieldInfo) throws IOException {
+                    if (FIELDS_TO_PRUNE.contains(fieldInfo.name)) {
+                        return Status.NO;
+                    }
+                    return super.needsField(fieldInfo);
+                }
+            });
+        }
+
+        @Override
+        public StoredFieldsReader getMergeInstance() {
+            return new PruneFieldsStoredFieldsReader(in.getMergeInstance());
+        }
+
+        @Override
+        public StoredFieldsReader clone() {
+            return new PruneFieldsStoredFieldsReader(in);
+        }
     }
 }

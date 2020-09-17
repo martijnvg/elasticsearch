@@ -41,6 +41,7 @@ import org.apache.lucene.util.BitSetIterator;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
@@ -129,25 +130,8 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
 
         @Override
         public StoredFieldsReader getFieldsReader() {
-            StoredFieldsReader fieldsReader = super.getFieldsReader();
-            return new FilterStoredFieldsReader(fieldsReader) {
-                @Override
-                public void visitDocument(int docID, StoredFieldVisitor visitor) throws IOException {
-                    if (recoverySourceToKeep != null && recoverySourceToKeep.get(docID)) {
-                        super.visitDocument(docID, visitor);
-                    } else {
-                        super.visitDocument(docID, new FilterStoredFieldVisitor(visitor) {
-                            @Override
-                            public Status needsField(FieldInfo fieldInfo) throws IOException {
-                                if (recoverySourceField.equals(fieldInfo.name)) {
-                                    return Status.NO;
-                                }
-                                return super.needsField(fieldInfo);
-                            }
-                        });
-                    }
-                }
-            };
+            return new RecoverySourcePruningStoredFieldsReader(
+                    super.getFieldsReader(), recoverySourceToKeep, recoverySourceField);
         }
 
         @Override
@@ -158,6 +142,46 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
         @Override
         public CacheHelper getReaderCacheHelper() {
             return null;
+        }
+
+    }
+
+    private static class RecoverySourcePruningStoredFieldsReader extends FilterStoredFieldsReader {
+
+        private final BitSet recoverySourceToKeep;
+        private final String recoverySourceField;
+
+        RecoverySourcePruningStoredFieldsReader(StoredFieldsReader in, BitSet recoverySourceToKeep, String recoverySourceField) {
+            super(in);
+            this.recoverySourceToKeep = recoverySourceToKeep;
+            this.recoverySourceField = Objects.requireNonNull(recoverySourceField);
+        }
+
+        @Override
+        public void visitDocument(int docID, StoredFieldVisitor visitor) throws IOException {
+            if (recoverySourceToKeep != null && recoverySourceToKeep.get(docID)) {
+                super.visitDocument(docID, visitor);
+            } else {
+                super.visitDocument(docID, new FilterStoredFieldVisitor(visitor) {
+                    @Override
+                    public Status needsField(FieldInfo fieldInfo) throws IOException {
+                        if (recoverySourceField.equals(fieldInfo.name)) {
+                            return Status.NO;
+                        }
+                        return super.needsField(fieldInfo);
+                    }
+                });
+            }
+        }
+
+        @Override
+        public StoredFieldsReader getMergeInstance() {
+            return new RecoverySourcePruningStoredFieldsReader(in.getMergeInstance(), recoverySourceToKeep, recoverySourceField);
+        }
+
+        @Override
+        public StoredFieldsReader clone() {
+            return new RecoverySourcePruningStoredFieldsReader(in.clone(), recoverySourceToKeep, recoverySourceField);
         }
 
     }

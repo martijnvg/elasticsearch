@@ -539,6 +539,14 @@ public class CoordinatorTests extends AbstractCoordinatorTestCase {
                     + defaultMillis(PUBLISH_TIMEOUT_SETTING)
                     // there might be a term bump causing another election
                     + DEFAULT_ELECTION_DELAY
+                    // in clusters with 5 nodes the chances of concurrent elections
+                    // increase, meaning that it takes longer to get a leader elected
+                    // so we should take into account those cases to ensure that the
+                    // cluster stabilises over time. See #63918 for a really messy scenario.
+                    + DEFAULT_ELECTION_DELAY
+                    // additionally take into account that publications might take longer
+                    // until the new leader detects that the old leader is unresponsive
+                    + defaultMillis(PUBLISH_TIMEOUT_SETTING)
 
                     // then wait for both of:
                     + Math.max(
@@ -1462,7 +1470,6 @@ public class CoordinatorTests extends AbstractCoordinatorTestCase {
         }
     }
 
-    @AwaitsFix(bugUrl = "https://github.com/elastic/elasticsearch/issues/62383")
     public void testLogsMessagesIfPublicationDelayed() throws IllegalAccessException {
         try (Cluster cluster = new Cluster(between(3, 5))) {
             cluster.runRandomly();
@@ -1508,7 +1515,7 @@ public class CoordinatorTests extends AbstractCoordinatorTestCase {
                     });
                 cluster.getAnyLeader().submitValue(randomLong());
                 cluster.runFor(defaultMillis(PUBLISH_TIMEOUT_SETTING) + 2 * DEFAULT_DELAY_VARIABILITY
-                        + defaultMillis(LagDetector.CLUSTER_FOLLOWER_LAG_TIMEOUT_SETTING),
+                        + defaultMillis(LagDetector.CLUSTER_FOLLOWER_LAG_TIMEOUT_SETTING) + DEFAULT_DELAY_VARIABILITY,
                     "waiting for messages to be emitted");
 
                 mockLogAppender.assertAllExpectationsMatched();

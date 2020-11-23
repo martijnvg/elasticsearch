@@ -27,7 +27,6 @@ import org.apache.lucene.store.RateLimiter;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.ElasticsearchTimeoutException;
 import org.elasticsearch.ExceptionsHelper;
-import org.elasticsearch.Version;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRunnable;
 import org.elasticsearch.action.support.ChannelActionListener;
@@ -175,7 +174,6 @@ public class PeerRecoveryTargetService implements IndexEventListener {
         final TransportRequest requestToSend;
         final StartRecoveryRequest startRequest;
         final RecoveryState.Timer timer;
-        CancellableThreads cancellableThreads;
         try (RecoveryRef recoveryRef = onGoingRecoveries.getRecovery(recoveryId)) {
             if (recoveryRef == null) {
                 logger.trace("not running recovery with id [{}] - can not find it (probably finished)", recoveryId);
@@ -183,7 +181,6 @@ public class PeerRecoveryTargetService implements IndexEventListener {
             }
             final RecoveryTarget recoveryTarget = recoveryRef.target();
             timer = recoveryTarget.state().getTimer();
-            cancellableThreads = recoveryTarget.cancellableThreads();
             if (preExistingRequest == null) {
                 try {
                     final IndexShard indexShard = recoveryTarget.indexShard();
@@ -212,22 +209,8 @@ public class PeerRecoveryTargetService implements IndexEventListener {
                 logger.trace("{} reestablishing recovery from {}", startRequest.shardId(), startRequest.sourceNode());
             }
         }
-        RecoveryResponseHandler responseHandler = new RecoveryResponseHandler(startRequest, timer);
-
-        try {
-            cancellableThreads.executeIO(() ->
-                // we still execute under cancelableThreads here to ensure we interrupt any blocking call to the network if any
-                // on the underlying transport. It's unclear if we need this here at all after moving to async execution but
-                // the issues that a missing call to this could cause are sneaky and hard to debug. If we don't need it on this
-                // call we can potentially remove it altogether which we should do it in a major release only with enough
-                // time to test. This shoudl be done for 7.0 if possible
-                transportService.sendRequest(startRequest.sourceNode(), actionName, requestToSend, responseHandler)
-            );
-        } catch (CancellableThreads.ExecutionCancelledException e) {
-            logger.trace("recovery cancelled", e);
-        } catch (Exception e) {
-            responseHandler.onException(e);
-        }
+        transportService.sendRequest(startRequest.sourceNode(), actionName, requestToSend,
+                new RecoveryResponseHandler(startRequest, timer));
     }
 
     /**
@@ -486,6 +469,7 @@ public class PeerRecoveryTargetService implements IndexEventListener {
         return createOrFinishListener(recoveryRef, channel, action, request, nullVal -> TransportResponse.Empty.INSTANCE);
     }
 
+    @Nullable
     private ActionListener<Void> createOrFinishListener(final RecoveryRef recoveryRef, final TransportChannel channel,
                                                         final String action, final RecoveryTransportRequest request,
                                                         final CheckedFunction<Void, TransportResponse, Exception> responseFn) {
@@ -584,10 +568,6 @@ public class PeerRecoveryTargetService implements IndexEventListener {
 
         @Override
         public void handleException(TransportException e) {
-            onException(e);
-        }
-
-        private void onException(Exception e) {
             if (logger.isTraceEnabled()) {
                 logger.trace(() -> new ParameterizedMessage(
                     "[{}][{}] Got exception on recovery", request.shardId().getIndex().getName(),
@@ -635,12 +615,7 @@ public class PeerRecoveryTargetService implements IndexEventListener {
             if (cause instanceof ConnectTransportException) {
                 logger.info("recovery of {} from [{}] interrupted by network disconnect, will retry in [{}]; cause: [{}]",
                     request.shardId(), request.sourceNode(), recoverySettings.retryDelayNetwork(), cause.getMessage());
-                if (request.sourceNode().getVersion().onOrAfter(Version.V_7_9_0)) {
-                    reestablishRecovery(request, cause.getMessage(), recoverySettings.retryDelayNetwork());
-                } else {
-                    retryRecovery(recoveryId, cause.getMessage(), recoverySettings.retryDelayNetwork(),
-                        recoverySettings.activityTimeout());
-                }
+                reestablishRecovery(request, cause.getMessage(), recoverySettings.retryDelayNetwork());
                 return;
             }
 

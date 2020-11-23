@@ -13,13 +13,10 @@ import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.fielddata.IndexFieldDataCache;
 import org.elasticsearch.index.fielddata.IndexNumericFieldData;
 import org.elasticsearch.index.fielddata.plain.LeafLongFieldData;
-import org.elasticsearch.index.mapper.MapperService;
 import org.elasticsearch.indices.breaker.CircuitBreakerService;
 import org.elasticsearch.search.aggregations.support.CoreValuesSourceType;
 import org.elasticsearch.search.aggregations.support.ValuesSourceType;
 import org.elasticsearch.xpack.runtimefields.mapper.BooleanFieldScript;
-
-import java.io.IOException;
 
 public final class BooleanScriptFieldData extends IndexNumericFieldData {
 
@@ -33,7 +30,7 @@ public final class BooleanScriptFieldData extends IndexNumericFieldData {
         }
 
         @Override
-        public BooleanScriptFieldData build(IndexFieldDataCache cache, CircuitBreakerService breakerService, MapperService mapperService) {
+        public BooleanScriptFieldData build(IndexFieldDataCache cache, CircuitBreakerService breakerService) {
             return new BooleanScriptFieldData(name, leafFactory);
         }
     }
@@ -66,7 +63,7 @@ public final class BooleanScriptFieldData extends IndexNumericFieldData {
     }
 
     @Override
-    public BooleanScriptLeafFieldData loadDirect(LeafReaderContext context) throws IOException {
+    public BooleanScriptLeafFieldData loadDirect(LeafReaderContext context) {
         return new BooleanScriptLeafFieldData(new BooleanScriptDocValues(leafFactory.newInstance(context)));
     }
 

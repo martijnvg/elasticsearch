@@ -62,6 +62,9 @@ public class TransformUsageIT extends TransformRestTestCase {
                 + ":"
                 + TransformStoredDoc.NAME
         );
+        statsExistsRequest.setOptions(expectWarnings("this request accesses system indices: [" +
+            TransformInternalIndexConstants.LATEST_INDEX_NAME + "], but in a future major version, direct access to system indices will " +
+            "be prevented by default"));
         // Verify that we have one stat document
         assertBusy(() -> {
             Map<String, Object> hasStatsMap = entityAsMap(client().performRequest(statsExistsRequest));
@@ -107,20 +110,20 @@ public class TransformUsageIT extends TransformRestTestCase {
                 // the trigger count can be higher if the scheduler kicked before usage has been called, therefore check for gte
                 if (statName.equals(TransformIndexerStats.NUM_INVOCATIONS.getPreferredName())) {
                     assertThat(
-                        "Incorrect stat " + statName,
+                        "Incorrect stat " + statName + ", got: " + statsMap.get("transform"),
                         extractStatsAsDouble(XContentMapValues.extractValue("transform.stats." + statName, statsMap)),
                         greaterThanOrEqualTo(expectedStats.get(statName).doubleValue())
                     );
                 } else {
                     assertThat(
-                        "Incorrect stat " + statName,
+                        "Incorrect stat " + statName + ", got: " + statsMap.get("transform"),
                         extractStatsAsDouble(XContentMapValues.extractValue("transform.stats." + statName, statsMap)),
                         equalTo(expectedStats.get(statName).doubleValue())
                     );
                 }
             }
             // Refresh the index so that statistics are searchable
-            refreshIndex(TransformInternalIndexConstants.LATEST_INDEX_VERSIONED_NAME);
+            refreshAllIndices();
         }, 60, TimeUnit.SECONDS);
 
         stopTransform("test_usage_continuous", false);

@@ -20,9 +20,8 @@
 package org.elasticsearch.search.fetch;
 
 import org.apache.lucene.search.Query;
-import org.elasticsearch.index.IndexSettings;
-import org.elasticsearch.index.mapper.MapperService;
 import org.elasticsearch.index.query.ParsedQuery;
+import org.elasticsearch.index.query.QueryShardContext;
 import org.elasticsearch.search.SearchExtBuilder;
 import org.elasticsearch.search.fetch.subphase.FetchDocValuesContext;
 import org.elasticsearch.search.fetch.subphase.FetchFieldsContext;
@@ -33,6 +32,7 @@ import org.elasticsearch.search.fetch.subphase.ScriptFieldsContext;
 import org.elasticsearch.search.fetch.subphase.highlight.SearchHighlightContext;
 import org.elasticsearch.search.internal.ContextIndexSearcher;
 import org.elasticsearch.search.internal.SearchContext;
+import org.elasticsearch.search.lookup.SearchLookup;
 import org.elasticsearch.search.rescore.RescoreContext;
 
 import java.util.Collections;
@@ -44,12 +44,14 @@ import java.util.List;
 public class FetchContext {
 
     private final SearchContext searchContext;
+    private final SearchLookup searchLookup;
 
     /**
      * Create a FetchContext based on a SearchContext
      */
     public FetchContext(SearchContext searchContext) {
         this.searchContext = searchContext;
+        this.searchLookup = searchContext.getQueryShardContext().lookup();
     }
 
     /**
@@ -67,17 +69,10 @@ public class FetchContext {
     }
 
     /**
-     * The mapper service for the index we are fetching documents from
+     * The {@code SearchLookup} for the this context
      */
-    public MapperService mapperService() {
-        return searchContext.mapperService();
-    }
-
-    /**
-     * The index settings for the index we are fetching documents from
-     */
-    public IndexSettings getIndexSettings() {
-        return mapperService().getIndexSettings();
+    public SearchLookup searchLookup() {
+        return searchLookup;
     }
 
     /**
@@ -138,7 +133,10 @@ public class FetchContext {
             // retrieve the `doc_value` associated with the collapse field
             String name = searchContext.collapse().getFieldName();
             if (dvContext == null) {
-                return new FetchDocValuesContext(Collections.singletonList(new FieldAndFormat(name, null)));
+                return new FetchDocValuesContext(
+                    searchContext.getQueryShardContext(),
+                    Collections.singletonList(new FieldAndFormat(name, null))
+                );
             } else if (searchContext.docValuesContext().fields().stream().map(ff -> ff.field).anyMatch(name::equals) == false) {
                 dvContext.fields().add(new FieldAndFormat(name, null));
             }
@@ -151,6 +149,14 @@ public class FetchContext {
      */
     public SearchHighlightContext highlight() {
         return searchContext.highlight();
+    }
+
+    /**
+     * Does the index analyzer for this field have token filters that may produce
+     * backwards offsets in term vectors
+     */
+    public boolean containsBrokenAnalysis(String field) {
+        return getQueryShardContext().containsBrokenAnalysis(field);
     }
 
     /**
@@ -171,10 +177,7 @@ public class FetchContext {
      * Should the response include version metadata
      */
     public boolean version() {
-        // TODO version is loaded from docvalues, not stored fields, so why are we checking
-        // stored fields here?
-        return searchContext.version() &&
-            (searchContext.storedFieldsContext() == null || searchContext.storedFieldsContext().fetchFields());
+        return searchContext.version();
     }
 
     /**
@@ -196,5 +199,9 @@ public class FetchContext {
      */
     public SearchExtBuilder getSearchExt(String name) {
         return searchContext.getSearchExt(name);
+    }
+
+    public QueryShardContext getQueryShardContext() {
+        return searchContext.getQueryShardContext();
     }
 }

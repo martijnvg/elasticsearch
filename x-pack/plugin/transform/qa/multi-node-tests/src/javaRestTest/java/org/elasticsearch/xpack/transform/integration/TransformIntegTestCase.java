@@ -7,6 +7,7 @@
 package org.elasticsearch.xpack.transform.integration;
 
 import org.apache.logging.log4j.Level;
+import org.elasticsearch.ElasticsearchStatusException;
 import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksRequest;
 import org.elasticsearch.action.admin.indices.refresh.RefreshRequest;
 import org.elasticsearch.action.bulk.BulkRequest;
@@ -55,6 +56,7 @@ import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.MatchAllQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchModule;
 import org.elasticsearch.search.aggregations.AggregatorFactories;
@@ -138,6 +140,39 @@ abstract class TransformIntegTestCase extends ESRestTestCase {
         try (RestHighLevelClient restClient = new TestRestHighLevelClient()) {
             return restClient.transform().startTransform(new StartTransformRequest(id), options);
         }
+    }
+
+    // workaround for https://github.com/elastic/elasticsearch/issues/62204
+    protected StartTransformResponse startTransformWithRetryOnConflict(String id, RequestOptions options) throws Exception {
+        final int totalRetries = 10;
+        long totalSleepTime = 0;
+        ElasticsearchStatusException lastConflict = null;
+        for (int retries = totalRetries; retries > 0; --retries) {
+            try (RestHighLevelClient restClient = new TestRestHighLevelClient()) {
+                return restClient.transform().startTransform(new StartTransformRequest(id), options);
+            } catch (ElasticsearchStatusException e) {
+                logger.warn(
+                    "Failed to start transform [{}], remaining retries [{}], error: [{}], status: [{}]",
+                    id,
+                    retries,
+                    e.getDetailedMessage(),
+                    e.status()
+                );
+
+                if (RestStatus.CONFLICT.equals(e.status()) == false) {
+                    throw e;
+                }
+
+                lastConflict = e;
+
+                // wait between some ms max 5s, between a check,
+                // with 10 retries the total retry should not be longer than 10s
+                final long sleepTime = 5 * Math.round((Math.min(Math.pow(2, 1 + totalRetries - retries), 1000)));
+                totalSleepTime += sleepTime;
+                Thread.sleep(sleepTime);
+            }
+        }
+        throw new AssertionError("startTransformWithRetryOnConflict timed out after " + totalSleepTime + "ms", lastConflict);
     }
 
     protected AcknowledgedResponse deleteTransform(String id) throws IOException {

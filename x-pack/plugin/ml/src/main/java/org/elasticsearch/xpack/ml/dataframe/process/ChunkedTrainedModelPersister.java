@@ -129,7 +129,8 @@ public class ChunkedTrainedModelPersister {
             return;
         }
         TrainedModelMetadata trainedModelMetadata = new TrainedModelMetadata(this.currentModelId.get(),
-            modelMetadata.getFeatureImportances());
+            modelMetadata.getFeatureImportances(),
+            modelMetadata.getFeatureImportanceBaseline());
 
 
         CountDownLatch latch = storeTrainedModelMetadata(trainedModelMetadata);
@@ -182,12 +183,20 @@ public class ChunkedTrainedModelPersister {
                 provider.refreshInferenceIndex(refreshListener);
             },
             e -> {
+                LOGGER.error(new ParameterizedMessage(
+                    "[{}] error storing trained model definition chunk [{}] with id [{}]",
+                        analytics.getId(),
+                        trainedModelDefinitionDoc.getDocNum(),
+                        trainedModelDefinitionDoc.getModelId()
+                    ),
+                    e);
                 this.readyToStoreNewModel.set(true);
                 failureHandler.accept(ExceptionsHelper.serverError(
                     "error storing trained model definition chunk [{}] with id [{}]",
                     e,
-                    trainedModelDefinitionDoc.getModelId(),
-                    trainedModelDefinitionDoc.getDocNum()));
+                    trainedModelDefinitionDoc.getDocNum(),
+                    trainedModelDefinitionDoc.getModelId()
+                ));
                 refreshListener.onResponse(null);
             }
         );
@@ -224,6 +233,13 @@ public class ChunkedTrainedModelPersister {
                 provider.refreshInferenceIndex(refreshListener);
             },
             e -> {
+                LOGGER.error(
+                    new ParameterizedMessage(
+                        "[{}] error storing trained model metadata with id [{}]",
+                        analytics.getId(),
+                        trainedModelMetadata.getModelId()
+                    ),
+                    e);
                 this.readyToStoreNewModel.set(true);
                 failureHandler.accept(ExceptionsHelper.serverError(
                     "error storing trained model metadata with id [{}]",
@@ -249,6 +265,13 @@ public class ChunkedTrainedModelPersister {
                 }
             },
             e -> {
+                LOGGER.error(
+                    new ParameterizedMessage(
+                        "[{}] error storing trained model config with id [{}]",
+                        analytics.getId(),
+                        trainedModelConfig.getModelId()
+                    ),
+                    e);
                 readyToStoreNewModel.set(true);
                 failureHandler.accept(ExceptionsHelper.serverError("error storing trained model config with id [{}]",
                     e,

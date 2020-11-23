@@ -71,7 +71,7 @@ public class AllocationRoutedStep extends ClusterStateWaitStep {
         // All the allocation attributes are already set so just need to check
         // if the allocation has happened
         RoutingAllocation allocation = new RoutingAllocation(allocationDeciders, clusterState.getRoutingNodes(), clusterState, null,
-            System.nanoTime());
+                null, System.nanoTime());
 
         int allocationPendingAllShards = 0;
 
@@ -88,21 +88,5 @@ public class AllocationRoutedStep extends ClusterStateWaitStep {
             }
         }
         return allocationPendingAllShards;
-    }
-
-    @Override
-    public int hashCode() {
-        return 611;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (obj == null) {
-            return false;
-        }
-        if (getClass() != obj.getClass()) {
-            return false;
-        }
-        return super.equals(obj);
     }
 }

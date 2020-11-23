@@ -13,13 +13,10 @@ import org.elasticsearch.index.fielddata.IndexFieldDataCache;
 import org.elasticsearch.index.fielddata.IndexNumericFieldData;
 import org.elasticsearch.index.fielddata.SortedNumericDoubleValues;
 import org.elasticsearch.index.fielddata.plain.LeafDoubleFieldData;
-import org.elasticsearch.index.mapper.MapperService;
 import org.elasticsearch.indices.breaker.CircuitBreakerService;
 import org.elasticsearch.search.aggregations.support.CoreValuesSourceType;
 import org.elasticsearch.search.aggregations.support.ValuesSourceType;
 import org.elasticsearch.xpack.runtimefields.mapper.DoubleFieldScript;
-
-import java.io.IOException;
 
 public final class DoubleScriptFieldData extends IndexNumericFieldData {
 
@@ -33,7 +30,7 @@ public final class DoubleScriptFieldData extends IndexNumericFieldData {
         }
 
         @Override
-        public DoubleScriptFieldData build(IndexFieldDataCache cache, CircuitBreakerService breakerService, MapperService mapperService) {
+        public DoubleScriptFieldData build(IndexFieldDataCache cache, CircuitBreakerService breakerService) {
             return new DoubleScriptFieldData(name, leafFactory);
         }
     }
@@ -66,7 +63,7 @@ public final class DoubleScriptFieldData extends IndexNumericFieldData {
     }
 
     @Override
-    public DoubleScriptLeafFieldData loadDirect(LeafReaderContext context) throws IOException {
+    public DoubleScriptLeafFieldData loadDirect(LeafReaderContext context) {
         return new DoubleScriptLeafFieldData(new DoubleScriptDocValues(leafFactory.newInstance(context)));
     }
 

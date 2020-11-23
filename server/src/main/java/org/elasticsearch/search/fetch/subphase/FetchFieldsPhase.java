@@ -41,20 +41,23 @@ import java.util.Set;
 public final class FetchFieldsPhase implements FetchSubPhase {
 
     @Override
-    public FetchSubPhaseProcessor getProcessor(FetchContext fetchContext, SearchLookup lookup) {
+    public FetchSubPhaseProcessor getProcessor(FetchContext fetchContext) {
         FetchFieldsContext fetchFieldsContext = fetchContext.fetchFieldsContext();
         if (fetchFieldsContext == null) {
             return null;
         }
-        FieldValueRetriever retriever = fetchFieldsContext.fieldValueRetriever(
-            fetchContext.getIndexName(),
-            fetchContext.mapperService(),
-            lookup
-        );
+
+        SearchLookup searchLookup = fetchContext.searchLookup();
+        if (fetchContext.getQueryShardContext().isSourceEnabled() == false) {
+            throw new IllegalArgumentException("Unable to retrieve the requested [fields] since _source is disabled " +
+                "in the mappings for index [" + fetchContext.getIndexName() + "]");
+        }
+
+        FieldFetcher fieldFetcher = FieldFetcher.create(fetchContext.getQueryShardContext(), searchLookup, fetchFieldsContext.fields());
         return new FetchSubPhaseProcessor() {
             @Override
             public void setNextReader(LeafReaderContext readerContext) {
-                retriever.setNextReader(readerContext);
+                fieldFetcher.setNextReader(readerContext);
             }
 
             @Override
@@ -63,7 +66,7 @@ public final class FetchFieldsPhase implements FetchSubPhase {
                 SourceLookup sourceLookup = hitContext.sourceLookup();
 
                 Set<String> ignoredFields = getIgnoredFields(hit);
-                Map<String, DocumentField> documentFields = retriever.retrieve(sourceLookup, ignoredFields);
+                Map<String, DocumentField> documentFields = fieldFetcher.fetch(sourceLookup, ignoredFields);
                 for (Map.Entry<String, DocumentField> entry : documentFields.entrySet()) {
                     hit.setDocumentField(entry.getKey(), entry.getValue());
                 }

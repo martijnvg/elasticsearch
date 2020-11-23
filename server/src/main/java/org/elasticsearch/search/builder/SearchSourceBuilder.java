@@ -30,7 +30,6 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.common.xcontent.ObjectParser;
 import org.elasticsearch.common.xcontent.ToXContentFragment;
 import org.elasticsearch.common.xcontent.ToXContentObject;
 import org.elasticsearch.common.xcontent.XContentBuilder;
@@ -64,8 +63,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
+import static java.util.Collections.emptyMap;
 import static org.elasticsearch.index.query.AbstractQueryBuilder.parseInnerQueryBuilder;
 import static org.elasticsearch.search.internal.SearchContext.TRACK_TOTAL_HITS_ACCURATE;
 import static org.elasticsearch.search.internal.SearchContext.TRACK_TOTAL_HITS_DISABLED;
@@ -111,6 +112,7 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
     public static final ParseField COLLAPSE = new ParseField("collapse");
     public static final ParseField SLICE = new ParseField("slice");
     public static final ParseField POINT_IN_TIME = new ParseField("pit");
+    public static final ParseField RUNTIME_MAPPINGS_FIELD = new ParseField("runtime_mappings");
 
     public static SearchSourceBuilder fromXContent(XContentParser parser) throws IOException {
         return fromXContent(parser, true);
@@ -192,6 +194,8 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
 
     private PointInTimeBuilder pointInTimeBuilder = null;
 
+    private Map<String, Object> runtimeMappings = emptyMap();
+
     /**
      * Constructs a new search source builder.
      */
@@ -251,6 +255,9 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
                 fetchFields = in.readList(FieldAndFormat::new);
             }
             pointInTimeBuilder = in.readOptionalWriteable(PointInTimeBuilder::new);
+        }
+        if (in.getVersion().onOrAfter(Version.V_7_11_0)) {
+            runtimeMappings = in.readMap();
         }
     }
 
@@ -312,6 +319,15 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
                 out.writeList(fetchFields);
             }
             out.writeOptionalWriteable(pointInTimeBuilder);
+        }
+        if (out.getVersion().onOrAfter(Version.V_7_11_0)) {
+            out.writeMap(runtimeMappings);
+        } else {
+            if (false == runtimeMappings.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "Versions before 7.11.0 don't support [runtime_mappings] and search was sent to [" + out.getVersion() + "]"
+                );
+            }
         }
     }
 
@@ -975,6 +991,21 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
     }
 
     /**
+     * Mappings specified on this search request that override built in mappings.
+     */
+    public Map<String, Object> runtimeMappings() {
+        return Collections.unmodifiableMap(runtimeMappings);
+    }
+
+    /**
+     * Specify the mappings specified on this search request that override built in mappings.
+     */
+    public SearchSourceBuilder runtimeMappings(Map<String, Object> runtimeMappings) {
+        this.runtimeMappings = runtimeMappings == null ? emptyMap() : runtimeMappings;
+        return this;
+    }
+
+    /**
      * Rewrites this search source builder into its primitive form. e.g. by
      * rewriting the QueryBuilder. If the builder did not change the identity
      * reference must be returned otherwise the builder will be rewritten
@@ -1060,6 +1091,7 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
         rewrittenBuilder.seqNoAndPrimaryTerm = seqNoAndPrimaryTerm;
         rewrittenBuilder.collapse = collapse;
         rewrittenBuilder.pointInTimeBuilder = pointInTimeBuilder;
+        rewrittenBuilder.runtimeMappings = runtimeMappings;
         return rewrittenBuilder;
     }
 
@@ -1170,6 +1202,8 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
                     collapse = CollapseBuilder.fromXContent(parser);
                 } else if (POINT_IN_TIME.match(currentFieldName, parser.getDeprecationHandler())) {
                     pointInTimeBuilder = PointInTimeBuilder.fromXContent(parser);
+                } else if (RUNTIME_MAPPINGS_FIELD.match(currentFieldName, parser.getDeprecationHandler())) {
+                    runtimeMappings = parser.map();
                 } else {
                     throw new ParsingException(parser.getTokenLocation(), "Unknown key for a " + token + " in [" + currentFieldName + "].",
                             parser.getTokenLocation());
@@ -1377,6 +1411,10 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
         if (pointInTimeBuilder != null) {
             pointInTimeBuilder.toXContent(builder, params);
         }
+        if (false == runtimeMappings.isEmpty()) {
+            builder.field(RUNTIME_MAPPINGS_FIELD.getPreferredName(), runtimeMappings);
+        }
+
         return builder;
     }
 
@@ -1589,7 +1627,7 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
         return Objects.hash(aggregations, explain, fetchSourceContext, fetchFields, docValueFields, storedFieldsContext, from,
             highlightBuilder, indexBoosts, minScore, postQueryBuilder, queryBuilder, rescoreBuilders, scriptFields, size,
             sorts, searchAfterBuilder, sliceBuilder, stats, suggestBuilder, terminateAfter, timeout, trackScores, version,
-            seqNoAndPrimaryTerm, profile, extBuilders, collapse, trackTotalHitsUpTo, pointInTimeBuilder);
+            seqNoAndPrimaryTerm, profile, extBuilders, collapse, trackTotalHitsUpTo, pointInTimeBuilder, runtimeMappings);
     }
 
     @Override
@@ -1630,7 +1668,8 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
                 && Objects.equals(extBuilders, other.extBuilders)
                 && Objects.equals(collapse, other.collapse)
                 && Objects.equals(trackTotalHitsUpTo, other.trackTotalHitsUpTo)
-                && Objects.equals(pointInTimeBuilder, other.pointInTimeBuilder);
+                && Objects.equals(pointInTimeBuilder, other.pointInTimeBuilder)
+                && Objects.equals(runtimeMappings, other.runtimeMappings);
     }
 
     @Override
@@ -1646,84 +1685,4 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
         }
     }
 
-    /**
-     * Specify whether this search should use specific reader contexts instead of the latest ones.
-     */
-    public static final class PointInTimeBuilder implements Writeable, ToXContentObject {
-        private static final ParseField ID_FIELD = new ParseField("id");
-        private static final ParseField KEEP_ALIVE_FIELD = new ParseField("keep_alive");
-        private static final ObjectParser<XContentParams, Void> PARSER;
-
-        static {
-            PARSER = new ObjectParser<>(POINT_IN_TIME.getPreferredName(), XContentParams::new);
-            PARSER.declareString((params, id) -> params.id = id, ID_FIELD);
-            PARSER.declareField((params, keepAlive) -> params.keepAlive = keepAlive,
-                (p, c) -> TimeValue.parseTimeValue(p.text(), KEEP_ALIVE_FIELD.getPreferredName()),
-                KEEP_ALIVE_FIELD, ObjectParser.ValueType.STRING);
-        }
-
-        private static final class XContentParams {
-            private String id;
-            private TimeValue keepAlive;
-        }
-
-        private final String id;
-        private final TimeValue keepAlive;
-
-        public PointInTimeBuilder(String id, TimeValue keepAlive) {
-            this.id = Objects.requireNonNull(id);
-            this.keepAlive = keepAlive;
-        }
-
-        public PointInTimeBuilder(StreamInput in) throws IOException {
-            id = in.readString();
-            keepAlive = in.readOptionalTimeValue();
-        }
-
-        @Override
-        public void writeTo(StreamOutput out) throws IOException {
-            out.writeString(id);
-            out.writeOptionalTimeValue(keepAlive);
-        }
-
-        @Override
-        public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-            builder.startObject(POINT_IN_TIME.getPreferredName());
-            builder.field(ID_FIELD.getPreferredName(), id);
-            if (keepAlive != null) {
-                builder.field(KEEP_ALIVE_FIELD.getPreferredName(), keepAlive);
-            }
-            builder.endObject();
-            return builder;
-        }
-
-        public static PointInTimeBuilder fromXContent(XContentParser parser) throws IOException {
-            final XContentParams params = PARSER.parse(parser, null);
-            if (params.id == null) {
-                throw new IllegalArgumentException("point int time id is not provided");
-            }
-            return new PointInTimeBuilder(params.id, params.keepAlive);
-        }
-
-        public TimeValue getKeepAlive() {
-            return keepAlive;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            final PointInTimeBuilder that = (PointInTimeBuilder) o;
-            return Objects.equals(id, that.id) && Objects.equals(keepAlive, that.keepAlive);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id, keepAlive);
-        }
-    }
 }

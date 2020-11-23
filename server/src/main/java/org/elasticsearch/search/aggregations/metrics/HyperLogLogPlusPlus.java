@@ -78,14 +78,28 @@ public final class HyperLogLogPlusPlus extends AbstractHyperLogLogPlusPlus {
 
     public HyperLogLogPlusPlus(int precision, BigArrays bigArrays, long initialBucketCount) {
         super(precision);
-        hll = new HyperLogLog(bigArrays, initialBucketCount, precision);
-        lc = new LinearCounting(bigArrays, initialBucketCount, precision, hll);
-        algorithm = new BitArray(1, bigArrays);
+        HyperLogLog hll = null;
+        LinearCounting lc = null;
+        BitArray algorithm = null;
+        boolean success = false;
+        try {
+            hll = new HyperLogLog(bigArrays, initialBucketCount, precision);
+            lc = new LinearCounting(bigArrays, initialBucketCount, precision, hll);
+            algorithm = new BitArray(1, bigArrays);
+            success = true;
+        } finally {
+            if (success == false) {
+                Releasables.close(hll, lc, algorithm);
+            }
+        }
+        this.hll = hll;
+        this.lc = lc;
+        this.algorithm = algorithm;
     }
 
     @Override
     public long maxOrd() {
-        return hll.runLens.size() >>> hll.precision();
+        return hll.maxOrd();
     }
 
     @Override
@@ -208,6 +222,10 @@ public final class HyperLogLogPlusPlus extends AbstractHyperLogLogPlusPlus {
             this.runLens =  bigArrays.newByteArray(initialBucketCount << precision);
             this.bigArrays = bigArrays;
             this.iterator = new HyperLogLogIterator(this, precision, m);
+        }
+
+        public long maxOrd() {
+            return runLens.size() >>> precision();
         }
 
         @Override
@@ -345,6 +363,9 @@ public final class HyperLogLogPlusPlus extends AbstractHyperLogLogPlusPlus {
         }
 
         private int recomputedSize(long bucketOrd) {
+            if (bucketOrd >= hll.maxOrd()) {
+                return 0;
+            }
             int size = 0;
             for (int i = 0; i <= mask; ++i) {
                 final int v = get(bucketOrd, i);

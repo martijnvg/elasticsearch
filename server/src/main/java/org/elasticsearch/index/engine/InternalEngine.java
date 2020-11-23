@@ -212,8 +212,9 @@ public class InternalEngine extends Engine {
     }
 
     InternalEngine(
-         EngineConfig engineConfig,
-        int maxDocs, BiFunction<Long, Long, LocalCheckpointTracker> localCheckpointTrackerSupplier,
+        EngineConfig engineConfig,
+        int maxDocs,
+        BiFunction<Long, Long, LocalCheckpointTracker> localCheckpointTrackerSupplier,
         Collection<BiFunction<FilterMergePolicy, Engine, FilterMergePolicy>> mergePolicyDecorators) {
         super(engineConfig);
         this.maxDocs = maxDocs;

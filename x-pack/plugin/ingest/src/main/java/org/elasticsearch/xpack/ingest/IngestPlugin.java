@@ -6,9 +6,11 @@
 
 package org.elasticsearch.xpack.ingest;
 
+import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.ingest.Processor;
 import org.elasticsearch.plugins.Plugin;
 
+import java.util.List;
 import java.util.Map;
 
 public class IngestPlugin extends Plugin implements org.elasticsearch.plugins.IngestPlugin {
@@ -21,5 +23,10 @@ public class IngestPlugin extends Plugin implements org.elasticsearch.plugins.In
             CommunityIdProcessor.TYPE,
             new CommunityIdProcessor.Factory()
         );
+    }
+
+    @Override
+    public List<Setting<?>> getSettings() {
+        return super.getSettings();
     }
 }

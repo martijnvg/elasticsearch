@@ -10,6 +10,9 @@ import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.elasticsearch.ElasticsearchStatusException;
+import org.elasticsearch.ResourceNotFoundException;
+import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.xpack.core.common.socket.SocketAccess;
 
 import java.io.ByteArrayOutputStream;
@@ -33,6 +36,12 @@ public class HttpClient implements Closeable {
         return SocketAccess.doPrivileged(() -> {
             ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
             try (CloseableHttpResponse response = client.execute(new HttpGet(url))) {
+                int statusCode = response.getStatusLine().getStatusCode();
+                if (statusCode == 404) {
+                    throw new ResourceNotFoundException("{} not found", url);
+                } else if (statusCode != 200) {
+                    throw new ElasticsearchStatusException("error during downloading {}", RestStatus.fromCode(statusCode), url);
+                }
                 response.getEntity().writeTo(outputStream);
                 return outputStream;
             }

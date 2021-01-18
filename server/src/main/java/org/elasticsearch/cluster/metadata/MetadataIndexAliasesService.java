@@ -114,11 +114,26 @@ public class MetadataIndexAliasesService {
                 currentState = deleteIndexService.deleteIndices(currentState, indicesToDelete);
             }
             Metadata.Builder metadata = Metadata.builder(currentState.metadata());
+
+            NewAliasValidator dataStreamAliasValidator = (alias, indexRouting, filter, writeIndex) -> {
+            };
+            for (AliasAction action : actions) {
+                if (action.isDataStreamOperation()) {
+                    if (action.apply(dataStreamAliasValidator, metadata, null)) {
+                        changed = true;
+                    }
+                }
+            }
+
             // Run the remaining alias actions
             final Set<String> maybeModifiedIndices = new HashSet<>();
             for (AliasAction action : actions) {
                 if (action.removeIndex()) {
                     // Handled above
+                    continue;
+                }
+                if (action.isDataStreamOperation()) {
+                    // Handed above
                     continue;
                 }
                 IndexMetadata index = metadata.get(action.getIndex());

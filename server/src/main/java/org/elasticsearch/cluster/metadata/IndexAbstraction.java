@@ -336,4 +336,54 @@ public interface IndexAbstraction {
             return dataStream;
         }
     }
+
+    class DataStreamAlias implements IndexAbstraction {
+
+        private final org.elasticsearch.cluster.metadata.DataStreamAlias dataStreamAlias;
+        private final List<IndexMetadata> indicesOfAllDataStreams;
+        private final IndexMetadata writeIndexOfWriteDataStream;
+
+        public DataStreamAlias(org.elasticsearch.cluster.metadata.DataStreamAlias dataStreamAlias,
+                               List<IndexMetadata> indicesOfAllDataStreams,
+                               IndexMetadata writeIndexOfWriteDataStream) {
+            this.dataStreamAlias = dataStreamAlias;
+            this.indicesOfAllDataStreams = indicesOfAllDataStreams;
+            this.writeIndexOfWriteDataStream = writeIndexOfWriteDataStream;
+        }
+
+        @Override
+        public Type getType() {
+            return Type.ALIAS;
+        }
+
+        @Override
+        public String getName() {
+            return dataStreamAlias.getName();
+        }
+
+        @Override
+        public List<IndexMetadata> getIndices() {
+            return indicesOfAllDataStreams;
+        }
+
+        @Override
+        public IndexMetadata getWriteIndex() {
+            return writeIndexOfWriteDataStream;
+        }
+
+        @Override
+        public DataStream getParentDataStream() {
+            return null;
+        }
+
+        @Override
+        public boolean isHidden() {
+            return false;
+        }
+
+        @Override
+        public boolean isSystem() {
+            return false;
+        }
+    }
 }

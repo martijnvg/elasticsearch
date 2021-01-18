@@ -25,6 +25,7 @@ import org.elasticsearch.action.AliasesRequest;
 import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.action.support.master.AcknowledgedRequest;
 import org.elasticsearch.cluster.metadata.AliasAction;
+import org.elasticsearch.cluster.metadata.DataStreamMetadata;
 import org.elasticsearch.common.ParseField;
 import org.elasticsearch.common.ParsingException;
 import org.elasticsearch.common.Strings;
@@ -85,6 +86,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
 
         private static final ParseField INDEX = new ParseField("index");
         private static final ParseField INDICES = new ParseField("indices");
+        private static final ParseField DATA_STREAM = new ParseField("data_stream");
         private static final ParseField ALIAS = new ParseField("alias");
         private static final ParseField ALIASES = new ParseField("aliases");
         private static final ParseField FILTER = new ParseField("filter");
@@ -155,6 +157,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
                 }
                 action.index(index);
             }, INDEX);
+            parser.declareString(AliasActions::dataStream, DATA_STREAM);
             parser.declareStringArray(fromList(String.class, (action, indices) -> {
                 if (action.indices() != null) {
                     throw new IllegalArgumentException("Only one of [index] and [indices] is supported");
@@ -223,6 +226,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
 
         private final AliasActions.Type type;
         private String[] indices;
+        private String dataStream;
         private String[] aliases = Strings.EMPTY_ARRAY;
         private String[] originalAliases = Strings.EMPTY_ARRAY;
         private String filter;
@@ -243,6 +247,9 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
         public AliasActions(StreamInput in) throws IOException {
             type = AliasActions.Type.fromValue(in.readByte());
             indices = in.readStringArray();
+            if (in.getVersion().onOrAfter(DataStreamMetadata.DATA_STREAM_ALIAS_VERSION)) {
+                dataStream = in.readString();
+            }
             aliases = in.readStringArray();
             filter = in.readOptionalString();
             routing = in.readOptionalString();
@@ -258,6 +265,9 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
         public void writeTo(StreamOutput out) throws IOException {
             out.writeByte(type.value());
             out.writeStringArray(indices);
+            if (out.getVersion().onOrAfter(DataStreamMetadata.DATA_STREAM_ALIAS_VERSION)) {
+                out.writeString(dataStream);
+            }
             out.writeStringArray(aliases);
             out.writeOptionalString(filter);
             out.writeOptionalString(routing);
@@ -274,7 +284,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
          * built.
          */
         void validate() {
-            if (indices == null) {
+            if (indices == null && dataStream == null) {
                 throw new IllegalArgumentException("One of [index] or [indices] is required");
             }
             if (type != AliasActions.Type.REMOVE_INDEX && (aliases == null || aliases.length == 0)) {
@@ -311,6 +321,18 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
                 throw new IllegalArgumentException("[index] can't be empty string");
             }
             this.indices = new String[] {index};
+            return this;
+        }
+
+        public String getDataStream() {
+            return dataStream;
+        }
+
+        public AliasActions dataStream(String dataStream) {
+            if (Strings.hasLength(dataStream) == false) {
+                throw new IllegalArgumentException("[data_stream] can't be empty string");
+            }
+            this.dataStream = dataStream;
             return this;
         }
 
@@ -486,7 +508,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
 
         @Override
         public String[] indices() {
-            return indices;
+            return dataStream != null ? new String[]{dataStream} : indices;
         }
 
         @Override
@@ -500,6 +522,9 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
             builder.startObject(type.fieldName);
             if (null != indices && 0 != indices.length) {
                 builder.array(INDICES.getPreferredName(), indices);
+            }
+            if (dataStream != null) {
+                builder.field(DATA_STREAM.getPreferredName(), dataStream);
             }
             if (0 != aliases.length) {
                 builder.array(ALIASES.getPreferredName(), aliases);
@@ -541,6 +566,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
             return "AliasActions["
                     + "type=" + type
                     + ",indices=" + Arrays.toString(indices)
+                    + ",dataStream=" + dataStream
                     + ",aliases=" + Arrays.deepToString(aliases)
                     + ",filter=" + filter
                     + ",routing=" + routing
@@ -560,6 +586,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
             AliasActions other = (AliasActions) obj;
             return Objects.equals(type, other.type)
                     && Arrays.equals(indices, other.indices)
+                    && Objects.equals(dataStream, other.dataStream)
                     && Arrays.equals(aliases, other.aliases)
                     && Objects.equals(filter, other.filter)
                     && Objects.equals(routing, other.routing)
@@ -572,7 +599,8 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
 
         @Override
         public int hashCode() {
-            return Objects.hash(type, indices, aliases, filter, routing, indexRouting, searchRouting, writeIndex, isHidden, mustExist);
+            return Objects.hash(type, indices, dataStream, aliases, filter, routing,
+                indexRouting, searchRouting, writeIndex, isHidden, mustExist);
         }
     }
 

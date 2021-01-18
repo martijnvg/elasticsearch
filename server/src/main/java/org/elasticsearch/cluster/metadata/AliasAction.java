@@ -60,6 +60,10 @@ public abstract class AliasAction {
      */
     abstract boolean apply(NewAliasValidator aliasValidator, Metadata.Builder metadata, IndexMetadata index);
 
+    public boolean isDataStreamOperation() {
+        return false;
+    }
+
     /**
      * Validate a new alias.
      */
@@ -207,6 +211,93 @@ public abstract class AliasAction {
         @Override
         boolean apply(NewAliasValidator aliasValidator, Metadata.Builder metadata, IndexMetadata index) {
             throw new UnsupportedOperationException();
+        }
+    }
+
+    public static class AddDataStreamAlias extends AliasAction {
+
+        private final String aliasName;
+        private final String dataStreamName;
+        private final Boolean isWriteDataStream;
+
+        public AddDataStreamAlias(String aliasName, String dataStreamName, Boolean isWriteDataStream) {
+            super(dataStreamName);
+            this.aliasName = aliasName;
+            this.dataStreamName = dataStreamName;
+            this.isWriteDataStream = isWriteDataStream;
+        }
+
+        public String getAliasName() {
+            return aliasName;
+        }
+
+        public String getDataStreamName() {
+            return dataStreamName;
+        }
+
+        public Boolean isWriteDataStream() {
+            return isWriteDataStream;
+        }
+
+        @Override
+        boolean removeIndex() {
+            return false;
+        }
+
+        @Override
+        public boolean isDataStreamOperation() {
+            return true;
+        }
+
+        @Override
+        boolean apply(NewAliasValidator aliasValidator, Metadata.Builder metadata, IndexMetadata index) {
+            aliasValidator.validate(aliasName, null, null, isWriteDataStream);
+            metadata.put(aliasName, dataStreamName, isWriteDataStream);
+            return true;
+        }
+    }
+
+    public class RemoveDataStreamAlias extends AliasAction {
+
+        public RemoveDataStreamAlias(String index) {
+            super(index);
+        }
+
+        @Override
+        boolean removeIndex() {
+            return false;
+        }
+
+        @Override
+        public boolean isDataStreamOperation() {
+            return true;
+        }
+
+        @Override
+        boolean apply(NewAliasValidator aliasValidator, Metadata.Builder metadata, IndexMetadata index) {
+            return false;
+        }
+    }
+
+    public class RemoveDataStreamToAlias extends AliasAction {
+
+        public RemoveDataStreamToAlias(String index) {
+            super(index);
+        }
+
+        @Override
+        boolean removeIndex() {
+            return false;
+        }
+
+        @Override
+        public boolean isDataStreamOperation() {
+            return true;
+        }
+
+        @Override
+        boolean apply(NewAliasValidator aliasValidator, Metadata.Builder metadata, IndexMetadata index) {
+            return false;
         }
     }
 }

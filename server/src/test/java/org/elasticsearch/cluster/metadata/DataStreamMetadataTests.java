@@ -33,13 +33,20 @@ public class DataStreamMetadataTests extends AbstractNamedWriteableTestCase<Data
     @Override
     protected DataStreamMetadata createTestInstance() {
         if (randomBoolean()) {
-            return new DataStreamMetadata(Collections.emptyMap());
+            return new DataStreamMetadata(Map.of(), Map.of());
         }
         Map<String, DataStream> dataStreams = new HashMap<>();
         for (int i = 0; i < randomIntBetween(1, 5); i++) {
             dataStreams.put(randomAlphaOfLength(5), DataStreamTestHelper.randomInstance());
         }
-        return new DataStreamMetadata(dataStreams);
+
+        Map<String, DataStreamAlias> dataStreamsAliases = new HashMap<>();
+        if (randomBoolean()) {
+            for (int i = 0; i < randomIntBetween(1, 5); i++) {
+                dataStreamsAliases.put(randomAlphaOfLength(5), DataStreamTestHelper.randomAliasInstance());
+            }
+        }
+        return new DataStreamMetadata(dataStreams, dataStreamsAliases);
     }
 
     @Override

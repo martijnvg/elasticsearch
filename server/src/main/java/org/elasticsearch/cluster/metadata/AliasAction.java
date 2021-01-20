@@ -259,8 +259,11 @@ public abstract class AliasAction {
 
     public class RemoveDataStreamAlias extends AliasAction {
 
-        public RemoveDataStreamAlias(String index) {
-            super(index);
+        private final String aliasName;
+
+        public RemoveDataStreamAlias(String dataStreamName, String aliasName) {
+            super(dataStreamName);
+            this.aliasName = aliasName;
         }
 
         @Override
@@ -275,14 +278,15 @@ public abstract class AliasAction {
 
         @Override
         boolean apply(NewAliasValidator aliasValidator, Metadata.Builder metadata, IndexMetadata index) {
+            metadata.removeDataStreamAlias(aliasName);
             return false;
         }
     }
 
-    public class RemoveDataStreamToAlias extends AliasAction {
+    public class RemoveDataStreamFromAlias extends AliasAction {
 
-        public RemoveDataStreamToAlias(String index) {
-            super(index);
+        public RemoveDataStreamFromAlias(String dataStreamName) {
+            super(dataStreamName);
         }
 
         @Override

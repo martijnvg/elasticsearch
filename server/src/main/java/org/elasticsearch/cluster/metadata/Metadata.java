@@ -1201,6 +1201,10 @@ public class Metadata implements Iterable<IndexMetadata>, Diffable<Metadata>, To
             return this;
         }
 
+        public Builder removeDataStreamAlias(String aliasName) {
+
+        }
+
         public Custom getCustom(String type) {
             return customs.get(type);
         }

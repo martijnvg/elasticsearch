@@ -103,8 +103,22 @@ public class TransportIndicesAliasesAction extends AcknowledgedTransportMasterNo
             if (action.getDataStream() != null) {
                 List<String> concreteDataStreamNames =
                     indexNameExpressionResolver.dataStreamNames(state, request.indicesOptions(), action.getDataStream());
-                for (String dataStreamName : concreteDataStreamNames) {
-                    finalActions.add(new AliasAction.AddDataStreamAlias(action.aliases()[0], dataStreamName, action.writeIndex()));
+                switch (action.actionType()) {
+                    case ADD:
+                        for (String dataStreamName : concreteDataStreamNames) {
+                            finalActions.add(new AliasAction.AddDataStreamAlias(action.aliases()[0], dataStreamName, action.writeIndex()));
+                        }
+                        break;
+                    case REMOVE:
+                        finalActions.add(new AliasAction.RemoveDataStreamAlias(action.aliases()[0], alias);
+                        break;
+                    case REMOVE_INDEX:
+                        for (String dataStreamName : concreteDataStreamNames) {
+                            finalActions.add(new AliasAction.RemoveDataStreamFromAlias(dataStreamName));
+                        }
+                        break;
+                    default:
+                        throw new IllegalArgumentException("Unsupported action [" + action.actionType() + "]");
                 }
                 continue;
             }

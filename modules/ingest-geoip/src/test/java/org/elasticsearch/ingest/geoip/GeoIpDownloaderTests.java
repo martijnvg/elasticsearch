@@ -1,10 +1,29 @@
 /*
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
  * or more contributor license agreements. Licensed under the Elastic License;
  * you may not use this file except in compliance with the Elastic License.
  */
 
-package org.elasticsearch.xpack.ingest.geoip;
+package org.elasticsearch.ingest.geoip;
 
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRequest;
@@ -15,59 +34,56 @@ import org.elasticsearch.action.bulk.BulkAction;
 import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
+import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.cluster.ClusterState;
-import org.elasticsearch.cluster.ClusterStateUpdateTask;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.settings.ClusterSettings;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.node.Node;
 import org.elasticsearch.test.ESTestCase;
 import org.elasticsearch.test.client.NoOpClient;
-import org.mockito.ArgumentCaptor;
+import org.elasticsearch.threadpool.ThreadPool;
 import org.mockito.Mockito;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class GeoIpDownloaderTests extends ESTestCase {
 
     public void testDownload() throws Exception {
         HttpClient httpClient = Mockito.mock(HttpClient.class);
         ClusterService clusterService = Mockito.mock(ClusterService.class);
-        Clock clock = Clock.fixed(Instant.now(), ZoneId.systemDefault());
 
         String uuid = "11111111-1111-1111-1111-111111111111";
         String endpoint = "endpoint.test";
+
+        ThreadPool threadPool = new ThreadPool(Settings.builder().put(Node.NODE_NAME_SETTING.getKey(), "test").build());
 
         Mockito.when(clusterService.getClusterSettings()).thenReturn(new ClusterSettings(Settings.EMPTY,
             Set.of(GeoIpDownloader.ENDPOINT_SETTING, GeoIpDownloader.POLL_INTERVAL_SETTING)));
         ClusterState state = ClusterState.builder(ClusterName.DEFAULT).build();
         Mockito.when(clusterService.state()).thenReturn(state);
-        ArgumentCaptor<ClusterStateUpdateTask> valueCapture = ArgumentCaptor.forClass(ClusterStateUpdateTask.class);
-        Mockito.doNothing().when(clusterService).submitStateUpdateTask(Mockito.eq(GeoIpDownloader.JOB_NAME), valueCapture.capture());
         Mockito.when(httpClient.getString(endpoint + "?key=" + uuid)).thenReturn("[{\n" +
             "        \"md5_hash\": \"ed1025ec2735230653db05864cfdfd21\",\n" +
             "        \"name\": \"GeoLite2-City.mmdb.gz\",\n" +
             "        \"provider\": \"maxmind\",\n" +
             "        \"updated\": 1609286450,\n" +
             "        \"url\": \"" + endpoint + "/data\"}]");
-        Mockito.when(httpClient.getBytes(endpoint + "/data?key=" + uuid)).thenReturn(new byte[]{1, 2, 3});
+        Mockito.when(httpClient.getBytes(endpoint + "/data")).thenReturn(new byte[]{1, 2, 3});
 
         try (MockClient client = new MockClient("testDownload")) {
-            GeoIpDownloader geoIpDownloader = new GeoIpDownloader(Settings.EMPTY, client, httpClient, clusterService, clock) {
-                @Override
-                protected String getLicenseUid() {
-                    return uuid;
-                }
-            };
+            GeoIpDownloader geoIpDownloader = new GeoIpDownloader(client, httpClient, clusterService, threadPool, Settings.EMPTY);
             geoIpDownloader.setEndpoint(endpoint);
-            geoIpDownloader.updateDatabases();
+            AtomicBoolean success = new AtomicBoolean();
+            geoIpDownloader.updateDatabases(() -> success.set(true));
+            assertTrue(success.get());
+            Mockito.verify(httpClient).getBytes(endpoint + "/data");
         }
-        GeoIpMetadata geoIpMetadata = valueCapture.getValue().execute(state).metadata().custom(GeoIpMetadata.TYPE);
-        assertEquals(clock.millis(), geoIpMetadata.getTimestamp());
+
+        threadPool.shutdownNow();
     }
 
     private static class MockClient extends NoOpClient {
@@ -85,6 +101,11 @@ public class GeoIpDownloaderTests extends ESTestCase {
                 BulkRequest bulkRequest = (BulkRequest) request;
                 List<DocWriteRequest<?>> requests = bulkRequest.requests();
                 assertEquals(1, requests.size());
+                IndexRequest writeRequest = (IndexRequest) requests.get(0);
+                assertEquals(GeoIpDownloader.DATABASES_INDEX, writeRequest.index());
+                assertEquals("GeoLite2-City.mmdb", writeRequest.id());
+                Map<String, Object> source = writeRequest.sourceAsMap();
+                assertArrayEquals(new byte[]{1, 2, 3}, (byte[]) source.get("data"));
                 listener.onResponse((Response) new BulkResponse(new BulkItemResponse[]{}, 100));
             } else {
                 throw new IllegalStateException("unexpected action called [" + action.name() + "]");

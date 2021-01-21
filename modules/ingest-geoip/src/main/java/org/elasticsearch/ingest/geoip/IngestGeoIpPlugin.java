@@ -24,16 +24,28 @@ import com.maxmind.db.NodeCache;
 import com.maxmind.db.Reader;
 import com.maxmind.geoip2.DatabaseReader;
 import com.maxmind.geoip2.model.AbstractResponse;
+import org.elasticsearch.client.Client;
+import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
+import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.Booleans;
+import org.elasticsearch.common.ParseField;
 import org.elasticsearch.common.SuppressForbidden;
 import org.elasticsearch.common.cache.Cache;
 import org.elasticsearch.common.cache.CacheBuilder;
 import org.elasticsearch.common.io.PathUtils;
+import org.elasticsearch.common.io.stream.NamedWriteableRegistry;
 import org.elasticsearch.common.settings.Setting;
+import org.elasticsearch.common.settings.SettingsModule;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.core.internal.io.IOUtils;
 import org.elasticsearch.ingest.Processor;
+import org.elasticsearch.persistent.PersistentTaskParams;
+import org.elasticsearch.persistent.PersistentTaskState;
+import org.elasticsearch.persistent.PersistentTasksExecutor;
 import org.elasticsearch.plugins.IngestPlugin;
+import org.elasticsearch.plugins.PersistentTaskPlugin;
 import org.elasticsearch.plugins.Plugin;
+import org.elasticsearch.threadpool.ThreadPool;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -51,7 +63,9 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-public class IngestGeoIpPlugin extends Plugin implements IngestPlugin, Closeable {
+import static org.elasticsearch.ingest.geoip.GeoIpDownloader.GEOIP_DOWNLOADER;
+
+public class IngestGeoIpPlugin extends Plugin implements IngestPlugin, Closeable, PersistentTaskPlugin {
     public static final Setting<Long> CACHE_SIZE =
         Setting.longSetting("ingest.geoip.cache_size", 1000, 0, Setting.Property.NodeScope);
 
@@ -61,7 +75,7 @@ public class IngestGeoIpPlugin extends Plugin implements IngestPlugin, Closeable
 
     @Override
     public List<Setting<?>> getSettings() {
-        return Arrays.asList(CACHE_SIZE);
+        return Arrays.asList(CACHE_SIZE, GeoIpDownloader.ENDPOINT_SETTING, GeoIpDownloader.POLL_INTERVAL_SETTING);
     }
 
     @Override
@@ -131,16 +145,16 @@ public class IngestGeoIpPlugin extends Plugin implements IngestPlugin, Closeable
 
     private static DatabaseReaderLazyLoader createLoader(Path databasePath, boolean loadDatabaseOnHeap) {
         return new DatabaseReaderLazyLoader(
-                databasePath,
-                () -> {
-                    DatabaseReader.Builder builder = createDatabaseBuilder(databasePath).withCache(NoCache.getInstance());
-                    if (loadDatabaseOnHeap) {
-                        builder.fileMode(Reader.FileMode.MEMORY);
-                    } else {
-                        builder.fileMode(Reader.FileMode.MEMORY_MAPPED);
-                    }
-                    return builder.build();
-                });
+            databasePath,
+            () -> {
+                DatabaseReader.Builder builder = createDatabaseBuilder(databasePath).withCache(NoCache.getInstance());
+                if (loadDatabaseOnHeap) {
+                    builder.fileMode(Reader.FileMode.MEMORY);
+                } else {
+                    builder.fileMode(Reader.FileMode.MEMORY_MAPPED);
+                }
+                return builder.build();
+            });
     }
 
     private static void assertDatabaseExistence(final Path path, final boolean exists) throws IOException {
@@ -201,11 +215,12 @@ public class IngestGeoIpPlugin extends Plugin implements IngestPlugin, Closeable
             return responseType.cast(cache.get(cacheKey));
         }
 
-         /**
+        /**
          * The key to use for the cache. Since this cache can span multiple geoip processors that all use different databases, the response
          * type is needed to be included in the cache key. For example, if we only used the IP address as the key the City and ASN the same
          * IP may be in both with different values and we need to cache both. The response type scopes the IP to the correct database
          * provides a means to safely cast the return objects.
+         *
          * @param <T> The AbstractResponse type used to scope the key and cast the result.
          */
         private static class CacheKey<T extends AbstractResponse> {
@@ -234,5 +249,25 @@ public class IngestGeoIpPlugin extends Plugin implements IngestPlugin, Closeable
                 return Objects.hash(ip, responseType);
             }
         }
+    }
+
+    @Override
+    public List<PersistentTasksExecutor<?>> getPersistentTasksExecutor(ClusterService clusterService, ThreadPool threadPool,
+                                                                       Client client, SettingsModule settingsModule,
+                                                                       IndexNameExpressionResolver expressionResolver) {
+        HttpClient httpClient = new HttpClient();
+        return List.of(new GeoIpDownloader(client, httpClient, clusterService, threadPool, settingsModule.getSettings()));
+    }
+
+    @Override
+    public List<NamedXContentRegistry.Entry> getNamedXContent() {
+        return List.of(new NamedXContentRegistry.Entry(PersistentTaskParams.class, new ParseField(GEOIP_DOWNLOADER),
+            GeoIpTaskParams::fromXContent));
+    }
+
+    @Override
+    public List<NamedWriteableRegistry.Entry> getNamedWriteables() {
+        return List.of(new NamedWriteableRegistry.Entry(PersistentTaskState.class, GEOIP_DOWNLOADER, GeoIpDownloaderTaskState::new),
+            new NamedWriteableRegistry.Entry(PersistentTaskParams.class, GEOIP_DOWNLOADER, GeoIpTaskParams::new));
     }
 }

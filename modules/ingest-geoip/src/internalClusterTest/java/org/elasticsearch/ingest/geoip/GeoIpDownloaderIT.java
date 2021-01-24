@@ -19,10 +19,12 @@
 
 package org.elasticsearch.ingest.geoip;
 
+import com.maxmind.geoip2.DatabaseReader;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.plugins.Plugin;
+import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.elasticsearch.test.ESIntegTestCase.Scope;
 
 import java.io.ByteArrayInputStream;
@@ -35,8 +37,6 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPInputStream;
-
-import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 
 @ClusterScope(scope = Scope.TEST)
 public class GeoIpDownloaderIT extends AbstractGeoIpIT {
@@ -77,5 +77,15 @@ public class GeoIpDownloaderIT extends AbstractGeoIpIT {
             });
             assertTrue(size.get() > input.length);
         }
+    }
+
+    @Override
+    protected int maximumNumberOfReplicas() {
+        return 0;
+    }
+
+    @Override
+    protected int maximumNumberOfShards() {
+        return 1;
     }
 }

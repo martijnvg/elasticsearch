@@ -19,6 +19,7 @@
 
 package org.elasticsearch.action.admin.indices.alias.get;
 
+import org.elasticsearch.cluster.DataStreamTestHelper;
 import org.elasticsearch.cluster.metadata.AliasMetadata;
 import org.elasticsearch.cluster.metadata.AliasMetadata.Builder;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
@@ -45,7 +46,7 @@ public class GetAliasesResponseTests extends AbstractWireSerializingTestCase<Get
 
     @Override
     protected GetAliasesResponse mutateInstance(GetAliasesResponse response) {
-        return new GetAliasesResponse(mutateAliases(response.getAliases()));
+        return new GetAliasesResponse(mutateAliases(response.getAliases()), randomList(5, DataStreamTestHelper::randomAliasInstance));
     }
 
     private static ImmutableOpenMap<String, List<AliasMetadata>> mutateAliases(ImmutableOpenMap<String, List<AliasMetadata>> aliases) {
@@ -86,7 +87,7 @@ public class GetAliasesResponseTests extends AbstractWireSerializingTestCase<Get
     }
 
     private static GetAliasesResponse createTestItem() {
-        return new GetAliasesResponse(createIndicesAliasesMap(0, 5).build());
+        return new GetAliasesResponse(createIndicesAliasesMap(0, 5).build(), randomList(5, DataStreamTestHelper::randomAliasInstance));
     }
 
     private static ImmutableOpenMap.Builder<String, List<AliasMetadata>> createIndicesAliasesMap(int min, int max) {

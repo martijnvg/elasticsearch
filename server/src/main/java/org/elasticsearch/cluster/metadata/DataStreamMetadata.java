@@ -62,8 +62,8 @@ public class DataStreamMetadata implements Metadata.Custom {
         PARSER.declareObject(ConstructingObjectParser.constructorArg(), (p, c) -> {
             Map<String, DataStreamAlias> dataStreams = new HashMap<>();
             while (p.nextToken() != XContentParser.Token.END_OBJECT) {
-                String name = p.currentName();
-                dataStreams.put(name, DataStreamAlias.fromXContent(p));
+                DataStreamAlias alias = DataStreamAlias.fromXContent(p);
+                dataStreams.put(alias.getName(), alias);
             }
             return dataStreams;
         }, DATA_STREAM_ALIASES);
@@ -142,7 +142,7 @@ public class DataStreamMetadata implements Metadata.Custom {
         builder.endObject();
         builder.startObject(DATA_STREAM_ALIASES.getPreferredName());
         for (Map.Entry<String, DataStreamAlias> dataStream : dataStreamAliases.entrySet()) {
-            builder.field(dataStream.getKey(), dataStream.getValue());
+            dataStream.getValue().toXContent(builder, params);
         }
         builder.endObject();
         return builder;

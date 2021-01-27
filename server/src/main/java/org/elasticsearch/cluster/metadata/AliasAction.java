@@ -257,13 +257,17 @@ public abstract class AliasAction {
         }
     }
 
-    public class RemoveDataStreamAlias extends AliasAction {
+    public static class RemoveDataStreamAlias extends AliasAction {
 
         private final String aliasName;
+        private final Boolean mustExist;
+        private final String dataStreamName;
 
-        public RemoveDataStreamAlias(String dataStreamName, String aliasName) {
+        public RemoveDataStreamAlias(String aliasName, String dataStreamName, Boolean mustExist) {
             super(dataStreamName);
             this.aliasName = aliasName;
+            this.mustExist = mustExist;
+            this.dataStreamName = dataStreamName;
         }
 
         @Override
@@ -278,30 +282,9 @@ public abstract class AliasAction {
 
         @Override
         boolean apply(NewAliasValidator aliasValidator, Metadata.Builder metadata, IndexMetadata index) {
-            metadata.removeDataStreamAlias(aliasName);
-            return false;
-        }
-    }
-
-    public class RemoveDataStreamFromAlias extends AliasAction {
-
-        public RemoveDataStreamFromAlias(String dataStreamName) {
-            super(dataStreamName);
-        }
-
-        @Override
-        boolean removeIndex() {
-            return false;
-        }
-
-        @Override
-        public boolean isDataStreamOperation() {
+            boolean mustExist = this.mustExist != null ? this.mustExist : false;
+            metadata.removeDataStreamAlias(aliasName, dataStreamName, mustExist);
             return true;
-        }
-
-        @Override
-        boolean apply(NewAliasValidator aliasValidator, Metadata.Builder metadata, IndexMetadata index) {
-            return false;
         }
     }
 }

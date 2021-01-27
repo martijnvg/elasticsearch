@@ -21,6 +21,7 @@ package org.elasticsearch.cluster.metadata;
 import org.elasticsearch.cluster.AbstractDiffable;
 import org.elasticsearch.cluster.Diff;
 import org.elasticsearch.common.ParseField;
+import org.elasticsearch.common.ParsingException;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.xcontent.ConstructingObjectParser;
@@ -34,18 +35,19 @@ import java.util.Objects;
 
 public class DataStreamAlias extends AbstractDiffable<DataStreamAlias> implements ToXContentObject {
 
-    public static final ParseField NAME_FIELD = new ParseField("name");
     public static final ParseField DATA_STREAMS_FIELD = new ParseField("data_streams");
     public static final ParseField WRITE_DATA_STREAM_FIELD = new ParseField("write_data_stream");
 
     @SuppressWarnings("unchecked")
-    private static final ConstructingObjectParser<DataStreamAlias, Void> PARSER = new ConstructingObjectParser<>("data_stream_alias",
-        args -> new DataStreamAlias((String) args[0], (List<String>) args[1], (String) args[2]));
+    private static final ConstructingObjectParser<DataStreamAlias, String> PARSER = new ConstructingObjectParser<>(
+        "data_stream_alias",
+        false,
+        (args, name) -> new DataStreamAlias(name, (List<String>) args[0], (String) args[1])
+    );
 
     static {
-        PARSER.declareString(ConstructingObjectParser.constructorArg(), NAME_FIELD);
         PARSER.declareStringArray(ConstructingObjectParser.constructorArg(), DATA_STREAMS_FIELD);
-        PARSER.declareBoolean(ConstructingObjectParser.constructorArg(), WRITE_DATA_STREAM_FIELD);
+        PARSER.declareString(ConstructingObjectParser.optionalConstructorArg(), WRITE_DATA_STREAM_FIELD);
     }
 
     private final String name;
@@ -81,15 +83,22 @@ public class DataStreamAlias extends AbstractDiffable<DataStreamAlias> implement
     }
 
     public static DataStreamAlias fromXContent(XContentParser parser) throws IOException {
-        return PARSER.parse(parser, null);
+        XContentParser.Token token = parser.currentToken();
+        if (token != XContentParser.Token.FIELD_NAME) {
+            throw new ParsingException(parser.getTokenLocation(), "unexpected token");
+        }
+        String name = parser.currentName();
+        DataStreamAlias alias = PARSER.parse(parser, name);
+        return alias;
     }
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-        builder.startObject();
-        builder.field(NAME_FIELD.getPreferredName(), name);
+        builder.startObject(name);
         builder.field(DATA_STREAMS_FIELD.getPreferredName(), dataStreams);
-        builder.field(WRITE_DATA_STREAM_FIELD.getPreferredName(), writeDataStream);
+        if (writeDataStream != null) {
+            builder.field(WRITE_DATA_STREAM_FIELD.getPreferredName(), writeDataStream);
+        }
         builder.endObject();
         return builder;
     }

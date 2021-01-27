@@ -21,6 +21,7 @@ package org.elasticsearch.cluster.metadata;
 
 import org.elasticsearch.cluster.DataStreamTestHelper;
 import org.elasticsearch.common.io.stream.NamedWriteableRegistry;
+import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.test.AbstractNamedWriteableTestCase;
 
 import java.io.IOException;
@@ -28,7 +29,15 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.elasticsearch.test.AbstractXContentTestCase.xContentTester;
+
 public class DataStreamMetadataTests extends AbstractNamedWriteableTestCase<DataStreamMetadata> {
+
+    public void testFromXContent() throws IOException {
+        xContentTester(this::createParser, this::createTestInstance, ToXContent.EMPTY_PARAMS, DataStreamMetadata::fromXContent)
+            .assertEqualsConsumer(this::assertEqualInstances)
+            .test();
+    }
 
     @Override
     protected DataStreamMetadata createTestInstance() {
@@ -43,7 +52,8 @@ public class DataStreamMetadataTests extends AbstractNamedWriteableTestCase<Data
         Map<String, DataStreamAlias> dataStreamsAliases = new HashMap<>();
         if (randomBoolean()) {
             for (int i = 0; i < randomIntBetween(1, 5); i++) {
-                dataStreamsAliases.put(randomAlphaOfLength(5), DataStreamTestHelper.randomAliasInstance());
+                DataStreamAlias alias = DataStreamTestHelper.randomAliasInstance();
+                dataStreamsAliases.put(alias.getName(), alias);
             }
         }
         return new DataStreamMetadata(dataStreams, dataStreamsAliases);

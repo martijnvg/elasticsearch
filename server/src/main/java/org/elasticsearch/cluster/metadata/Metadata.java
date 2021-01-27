@@ -25,6 +25,7 @@ import com.carrotsearch.hppc.cursors.ObjectObjectCursor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.util.CollectionUtil;
+import org.elasticsearch.ResourceNotFoundException;
 import org.elasticsearch.Version;
 import org.elasticsearch.action.AliasesRequest;
 import org.elasticsearch.cluster.Diff;
@@ -1195,14 +1196,48 @@ public class Metadata implements Iterable<IndexMetadata>, Diffable<Metadata>, To
                     .map(dsmd -> new HashMap<>(dsmd.getDataStreamAliases()))
                     .orElse(new HashMap<>());
 
-            // TODO: update data stream alias as well?
+            List<DataStreamAlias> aliasesToUpdate = new ArrayList<>();
+            for (var alias : existingDataStreamAliases.values()) {
+                // TODO: alias#dataStreams should be a set...
+                if (alias.getDataStreams().contains(name)) {
+                    List<String> updatedDataStreams = new ArrayList<>(alias.getDataStreams());
+                    updatedDataStreams.remove(name);
+                    aliasesToUpdate.add(new DataStreamAlias(alias.getName(), updatedDataStreams, alias.getWriteDataStream()));
+                }
+            }
+            for (DataStreamAlias alias : aliasesToUpdate) {
+                existingDataStreamAliases.put(alias.getName(), alias);
+            }
 
             this.customs.put(DataStreamMetadata.TYPE, new DataStreamMetadata(existingDataStreams, existingDataStreamAliases));
             return this;
         }
 
-        public Builder removeDataStreamAlias(String aliasName) {
+        public Builder removeDataStreamAlias(String aliasName, String dataStreamName, boolean mustExist) {
+            Map<String, DataStreamAlias> dataStreamAliases =
+                Optional.ofNullable((DataStreamMetadata) this.customs.get(DataStreamMetadata.TYPE))
+                    .map(dsmd -> new HashMap<>(dsmd.getDataStreamAliases()))
+                    .orElse(new HashMap<>());
 
+            DataStreamAlias existing = dataStreamAliases.get(aliasName);
+            if (mustExist && existing == null) {
+                throw new ResourceNotFoundException("alias [" + aliasName + "] doesn't exist");
+            }
+            List<String> dataStreams = new ArrayList<>(existing.getDataStreams());
+            dataStreams.remove(dataStreamName);
+            if (dataStreams.isEmpty()) {
+                dataStreamAliases.remove(aliasName);
+            } else {
+                dataStreamAliases.put(aliasName,
+                    new DataStreamAlias(existing.getName(), dataStreams, existing.getWriteDataStream()));
+            }
+
+            Map<String, DataStream> existingDataStream =
+                Optional.ofNullable((DataStreamMetadata) this.customs.get(DataStreamMetadata.TYPE))
+                    .map(dsmd -> new HashMap<>(dsmd.dataStreams()))
+                    .orElse(new HashMap<>());
+            this.customs.put(DataStreamMetadata.TYPE, new DataStreamMetadata(existingDataStream, dataStreamAliases));
+            return this;
         }
 
         public Custom getCustom(String type) {

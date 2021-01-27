@@ -110,11 +110,9 @@ public class TransportIndicesAliasesAction extends AcknowledgedTransportMasterNo
                         }
                         break;
                     case REMOVE:
-                        finalActions.add(new AliasAction.RemoveDataStreamAlias(action.aliases()[0], alias);
-                        break;
-                    case REMOVE_INDEX:
                         for (String dataStreamName : concreteDataStreamNames) {
-                            finalActions.add(new AliasAction.RemoveDataStreamFromAlias(dataStreamName));
+                            finalActions.add(
+                                new AliasAction.RemoveDataStreamAlias(action.aliases()[0], dataStreamName, action.mustExist()));
                         }
                         break;
                     default:

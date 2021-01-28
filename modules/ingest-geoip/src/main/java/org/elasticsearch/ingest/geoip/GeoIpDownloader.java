@@ -25,6 +25,7 @@ import org.elasticsearch.ResourceAlreadyExistsException;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.action.support.WriteRequest;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.OriginSettingClient;
@@ -43,11 +44,15 @@ import org.elasticsearch.persistent.PersistentTaskParams;
 import org.elasticsearch.persistent.PersistentTaskState;
 import org.elasticsearch.persistent.PersistentTasksExecutor;
 import org.elasticsearch.persistent.PersistentTasksService;
+import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.threadpool.ThreadPool;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 class GeoIpDownloader extends PersistentTasksExecutor<PersistentTaskParams> implements ClusterStateListener {
 
@@ -99,22 +104,37 @@ class GeoIpDownloader extends PersistentTasksExecutor<PersistentTaskParams> impl
         logger.info("updating geoip databases");
         String data = httpClient.getString(endpoint + "?key=11111111-1111-1111-1111-111111111111");
         List<Map<String, Object>> response = XContentHelper.convertToList(XContentFactory.xContent(XContentType.JSON), data, false);
-        for (Map<String, Object> map : response) {
-            String url = (String) map.remove("url");
-            map.put("data", httpClient.getBytes(url));
-            map.put("name", map.get("name").toString().replace(".gz", ""));
-        }
-        BulkRequestBuilder bulkRequestBuilder = client.prepareBulk(DATABASES_INDEX).setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE);
-        for (Map<String, Object> stringObjectMap : response) {
-            bulkRequestBuilder.add(new IndexRequest().id((String) stringObjectMap.get("name")).source(stringObjectMap));
-        }
-        bulkRequestBuilder.execute(ActionListener.wrap(bulkItemResponses -> {
-            if (bulkItemResponses.hasFailures()) {
-                logger.error("could not update geoip databases [" + bulkItemResponses.buildFailureMessage() + "]");
-                return;
-            }
-            onSuccess.run();
-        }, e -> logger.error("could not update geoip databases", e)));
+        client.prepareSearch(DATABASES_INDEX)
+            .setIndicesOptions(IndicesOptions.LENIENT_EXPAND_OPEN_HIDDEN)
+            .execute(ActionListener.wrap(searchResponse -> {
+                    Map<String, Object> current = Arrays.stream(searchResponse.getHits().getHits()).collect(
+                        Collectors.toMap(SearchHit::getId, h -> h.getSourceAsMap().get("md5_hash")));
+                    BulkRequestBuilder bulkRequestBuilder =
+                        client.prepareBulk(DATABASES_INDEX).setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE);
+                    for (Map<String, Object> map : response) {
+                        String url = (String) map.remove("url");
+                        String name = map.get("name").toString().replace(".gz", "");
+                        if (Objects.equals(map.get("md5_hash"), current.get(name))) {
+                            continue;
+                        }
+                        map.put("data", httpClient.getBytes(url));
+                        map.put("name", name);
+                        bulkRequestBuilder.add(new IndexRequest().id((String) map.get("name")).source(map));
+                    }
+                    if (bulkRequestBuilder.numberOfActions() > 0) {
+                        bulkRequestBuilder.execute(ActionListener.wrap(bulkItemResponses -> {
+                            if (bulkItemResponses.hasFailures()) {
+                                logger.error("could not update geoip databases [" + bulkItemResponses.buildFailureMessage() + "]");
+                                return;
+                            }
+                            logger.info("successfully updated geoip databases");
+                            onSuccess.run();
+                        }, e -> logger.error("could not update geoip databases", e)));
+                    } else {
+                        onSuccess.run();
+                    }
+                },
+                e -> logger.error("could not update geoip databases", e)));
     }
 
     @Override
@@ -134,8 +154,8 @@ class GeoIpDownloader extends PersistentTasksExecutor<PersistentTaskParams> impl
                 task.setInterval(pollInterval);
                 try {
                     updateDatabases(() -> allocatedTask.updatePersistentTaskState(new GeoIpDownloaderTaskState(System.currentTimeMillis()),
-                        ActionListener.wrap(r -> {
-                        }, e -> logger.error("failed to update geoip downloader task state", e))));
+                        ActionListener.wrap(r -> logger.info("updated geoip task state"),
+                            e -> logger.error("failed to update geoip downloader task state", e))));
                 } catch (Exception e) {
                     logger.error("exception during geoip databases update", e);
                 }

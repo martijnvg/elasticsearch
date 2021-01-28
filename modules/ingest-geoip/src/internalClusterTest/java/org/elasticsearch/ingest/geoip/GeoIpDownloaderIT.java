@@ -28,14 +28,13 @@ import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.elasticsearch.test.ESIntegTestCase.Scope;
 
 import java.io.ByteArrayInputStream;
-import java.io.OutputStream;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPInputStream;
 
 @ClusterScope(scope = Scope.TEST)
@@ -62,20 +61,13 @@ public class GeoIpDownloaderIT extends AbstractGeoIpIT {
             assertEquals(Set.of("md5_hash", "updated", "data", "provider", "name"), source.keySet());
             String name = (String) source.get("name");
             assertEquals(id, name);
-            byte[] input = (byte[]) source.get("data");
-            AtomicInteger size = new AtomicInteger();
-            new GZIPInputStream(new ByteArrayInputStream(input)).transferTo(new OutputStream() {
-                @Override
-                public void write(int b) {
-                    size.incrementAndGet();
-                }
-
-                @Override
-                public void write(byte[] b, int off, int len) {
-                    size.addAndGet(len);
-                }
-            });
-            assertTrue(size.get() > input.length);
+            Object data = source.get("data");
+            if (data instanceof String) {
+                data = Base64.getDecoder().decode((String) data);
+            }
+            byte[] input = (byte[]) data;
+            DatabaseReader build = new DatabaseReader.Builder(new GZIPInputStream(new ByteArrayInputStream(input))).build();
+            assertEquals(id.replace(".mmdb", ""), build.getMetadata().getDatabaseType());
         }
     }
 

@@ -25,6 +25,7 @@
 
 package org.elasticsearch.ingest.geoip;
 
+import org.apache.lucene.search.TotalHits;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionResponse;
@@ -35,21 +36,30 @@ import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.search.SearchAction;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.search.SearchResponseSections;
 import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.settings.ClusterSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.node.Node;
+import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.test.ESTestCase;
 import org.elasticsearch.test.client.NoOpClient;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.mockito.Mockito;
 
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.elasticsearch.ingest.geoip.GeoIpDownloader.DATABASES_INDEX;
 
 public class GeoIpDownloaderTests extends ESTestCase {
 
@@ -97,15 +107,26 @@ public class GeoIpDownloaderTests extends ESTestCase {
         protected <Request extends ActionRequest, Response extends ActionResponse> void doExecute(ActionType<Response> action,
                                                                                                   Request request,
                                                                                                   ActionListener<Response> listener) {
-            if (action == BulkAction.INSTANCE) {
+            if (action == SearchAction.INSTANCE) {
+                SearchRequest searchRequest = (SearchRequest) request;
+                assertArrayEquals(new String[]{DATABASES_INDEX}, searchRequest.indices());
+                SearchHits hits = new SearchHits(new SearchHit[0], new TotalHits(0, TotalHits.Relation.EQUAL_TO), 0);
+                SearchResponseSections internal = new SearchResponseSections(hits, null, null, false, false, null, 0);
+                SearchResponse s = new SearchResponse(internal, null, 0, 1, 0, 0, null, SearchResponse.Clusters.EMPTY);
+                listener.onResponse((Response) s);
+            } else if (action == BulkAction.INSTANCE) {
                 BulkRequest bulkRequest = (BulkRequest) request;
                 List<DocWriteRequest<?>> requests = bulkRequest.requests();
                 assertEquals(1, requests.size());
                 IndexRequest writeRequest = (IndexRequest) requests.get(0);
-                assertEquals(GeoIpDownloader.DATABASES_INDEX, writeRequest.index());
+                assertEquals(DATABASES_INDEX, writeRequest.index());
                 assertEquals("GeoLite2-City.mmdb", writeRequest.id());
                 Map<String, Object> source = writeRequest.sourceAsMap();
-                assertArrayEquals(new byte[]{1, 2, 3}, (byte[]) source.get("data"));
+                Object data = source.get("data");
+                if (data instanceof String) {
+                    data = Base64.getDecoder().decode((String) data);
+                }
+                assertArrayEquals(new byte[]{1, 2, 3}, (byte[]) data);
                 listener.onResponse((Response) new BulkResponse(new BulkItemResponse[]{}, 100));
             } else {
                 throw new IllegalStateException("unexpected action called [" + action.name() + "]");

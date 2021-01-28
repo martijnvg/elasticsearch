@@ -24,6 +24,7 @@ import com.maxmind.db.NodeCache;
 import com.maxmind.db.Reader;
 import com.maxmind.geoip2.DatabaseReader;
 import com.maxmind.geoip2.model.AbstractResponse;
+import org.elasticsearch.Version;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
 import org.elasticsearch.cluster.service.ClusterService;
@@ -35,9 +36,12 @@ import org.elasticsearch.common.cache.CacheBuilder;
 import org.elasticsearch.common.io.PathUtils;
 import org.elasticsearch.common.io.stream.NamedWriteableRegistry;
 import org.elasticsearch.common.settings.Setting;
+import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.SettingsModule;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
+import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.core.internal.io.IOUtils;
+import org.elasticsearch.indices.SystemIndexDescriptor;
 import org.elasticsearch.ingest.Processor;
 import org.elasticsearch.persistent.PersistentTaskParams;
 import org.elasticsearch.persistent.PersistentTaskState;
@@ -45,15 +49,18 @@ import org.elasticsearch.persistent.PersistentTasksExecutor;
 import org.elasticsearch.plugins.IngestPlugin;
 import org.elasticsearch.plugins.PersistentTaskPlugin;
 import org.elasticsearch.plugins.Plugin;
+import org.elasticsearch.plugins.SystemIndexPlugin;
 import org.elasticsearch.threadpool.ThreadPool;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -63,9 +70,12 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
+import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
+import static org.elasticsearch.index.mapper.MapperService.SINGLE_MAPPING_NAME;
+import static org.elasticsearch.ingest.geoip.GeoIpDownloader.DATABASES_INDEX;
 import static org.elasticsearch.ingest.geoip.GeoIpDownloader.GEOIP_DOWNLOADER;
 
-public class IngestGeoIpPlugin extends Plugin implements IngestPlugin, Closeable, PersistentTaskPlugin {
+public class IngestGeoIpPlugin extends Plugin implements IngestPlugin, SystemIndexPlugin, Closeable, PersistentTaskPlugin {
     public static final Setting<Long> CACHE_SIZE =
         Setting.longSetting("ingest.geoip.cache_size", 1000, 0, Setting.Property.NodeScope);
 
@@ -269,5 +279,51 @@ public class IngestGeoIpPlugin extends Plugin implements IngestPlugin, Closeable
     public List<NamedWriteableRegistry.Entry> getNamedWriteables() {
         return List.of(new NamedWriteableRegistry.Entry(PersistentTaskState.class, GEOIP_DOWNLOADER, GeoIpDownloaderTaskState::new),
             new NamedWriteableRegistry.Entry(PersistentTaskParams.class, GEOIP_DOWNLOADER, GeoIpTaskParams::new));
+    }
+
+    @Override
+    public Collection<SystemIndexDescriptor> getSystemIndexDescriptors(Settings settings) {
+        SystemIndexDescriptor geoipDatabasesIndex = SystemIndexDescriptor.builder()
+            .setIndexPattern(DATABASES_INDEX)
+            .setDescription("GeoIP databases")
+            .setMappings(mappings())
+            .setOrigin("geoip")
+            .setVersionMetaKey("version")
+            .setPrimaryIndex(DATABASES_INDEX)
+            .build();
+        return Collections.singleton(geoipDatabasesIndex);
+    }
+
+    private static XContentBuilder mappings() {
+        try {
+            return jsonBuilder()
+                .startObject()
+                    .startObject(SINGLE_MAPPING_NAME)
+                        .startObject("_meta")
+                            .field("version", Version.CURRENT)
+                        .endObject()
+                        .field("dynamic", "strict")
+                        .startObject("properties")
+                            .startObject("name")
+                                .field("type", "keyword")
+                            .endObject()
+                            .startObject("md5_hash")
+                                .field("type", "keyword")
+                            .endObject()
+                            .startObject("updated")
+                                .field("type", "date")
+                            .endObject()
+                            .startObject("data")
+                                .field("type", "binary")
+                            .endObject()
+                            .startObject("provider")
+                                .field("type", "keyword")
+                            .endObject()
+                        .endObject()
+                    .endObject()
+                .endObject();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to build mappings for " + DATABASES_INDEX, e);
+        }
     }
 }

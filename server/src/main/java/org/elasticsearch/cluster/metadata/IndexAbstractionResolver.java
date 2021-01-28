@@ -64,10 +64,27 @@ public class IndexAbstractionResolver {
                     indexAbstraction = dateMathName;
                 } else if (availableIndexAbstractions.contains(dateMathName) &&
                     isIndexVisible(indexAbstraction, dateMathName, indicesOptions, metadata, includeDataStreams, true)) {
-                    if (minus) {
-                        finalIndices.remove(dateMathName);
+                    // TODO: Should authorization really be defined by the data streams an alias refers to?
+                    // Or should we keep the same model as with indices aliases? Because security does need to resolve data stream aliases
+                    // in order to determine which data streams an data stream alias can resolve to.
+                    // TODO: DRY...
+                    IndexAbstraction ia = metadata.getIndicesLookup().get(dateMathName);
+                    if (includeDataStreams && ia instanceof IndexAbstraction.DataStreamAlias) {
+                        // Resolve data stream aliases to authorized data streams:
+                        Set<String> dataStreams =
+                            new HashSet<>(((IndexAbstraction.DataStreamAlias) ia).getDataStreamAlias().getDataStreams());
+                        dataStreams.retainAll(availableIndexAbstractions);
+                        if (minus) {
+                            finalIndices.removeAll(dataStreams);
+                        } else {
+                            finalIndices.addAll(dataStreams);
+                        }
                     } else {
-                        finalIndices.add(dateMathName);
+                        if (minus) {
+                            finalIndices.remove(dateMathName);
+                        } else {
+                            finalIndices.add(dateMathName);
+                        }
                     }
                 } else {
                     if (indicesOptions.ignoreUnavailable() == false) {
@@ -82,7 +99,20 @@ public class IndexAbstractionResolver {
                 for (String authorizedIndex : availableIndexAbstractions) {
                     if (Regex.simpleMatch(indexAbstraction, authorizedIndex) &&
                         isIndexVisible(indexAbstraction, authorizedIndex, indicesOptions, metadata, includeDataStreams)) {
-                        resolvedIndices.add(authorizedIndex);
+                        // TODO: Should authorization really be defined by the data streams an alias refers to?
+                        // Or should we keep the same model as with indices aliases? Because security does need to resolve data stream aliases
+                        // in order to determine which data streams an data stream alias can resolve to.
+                        // TODO: DRY...
+                        IndexAbstraction ia = metadata.getIndicesLookup().get(authorizedIndex);
+                        if (includeDataStreams && ia instanceof IndexAbstraction.DataStreamAlias) {
+                            // Resolve data stream aliases to authorized data streams:
+                            Set<String> dataStreams =
+                                new HashSet<>(((IndexAbstraction.DataStreamAlias) ia).getDataStreamAlias().getDataStreams());
+                            dataStreams.retainAll(availableIndexAbstractions);
+                            resolvedIndices.addAll(dataStreams);
+                        } else {
+                            resolvedIndices.add(authorizedIndex);
+                        }
                     }
                 }
                 if (resolvedIndices.isEmpty()) {
@@ -98,10 +128,27 @@ public class IndexAbstractionResolver {
                     }
                 }
             } else if (dateMathName.equals(indexAbstraction)) {
-                if (minus) {
-                    finalIndices.remove(indexAbstraction);
+                // TODO: Should authorization really be defined by the data streams an alias refers to?
+                // Or should we keep the same model as with indices aliases? Because security does need to resolve data stream aliases
+                // in order to determine which data streams an data stream alias can resolve to.
+                // TODO: DRY...
+                IndexAbstraction ia = metadata.getIndicesLookup().get(indexAbstraction);
+                if (includeDataStreams && ia instanceof IndexAbstraction.DataStreamAlias) {
+                    // Resolve data stream aliases to authorized data streams:
+                    Set<String> dataStreams =
+                        new HashSet<>(((IndexAbstraction.DataStreamAlias) ia).getDataStreamAlias().getDataStreams());
+                    dataStreams.retainAll(availableIndexAbstractions);
+                    if (minus) {
+                        finalIndices.removeAll(dataStreams);
+                    } else {
+                        finalIndices.addAll(dataStreams);
+                    }
                 } else {
-                    finalIndices.add(indexAbstraction);
+                    if (minus) {
+                        finalIndices.remove(indexAbstraction);
+                    } else {
+                        finalIndices.add(indexAbstraction);
+                    }
                 }
             }
         }

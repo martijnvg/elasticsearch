@@ -563,7 +563,7 @@ public class IndexNameExpressionResolver {
                     String concreteIndex = index.getIndex().getName();
                     AliasMetadata aliasMetadata = index.getAliases().get(indexAbstraction.getName());
                     if (norouting.contains(concreteIndex) == false) {
-                        if (aliasMetadata.searchRoutingValues().isEmpty() == false) {
+                        if (aliasMetadata != null && aliasMetadata.searchRoutingValues().isEmpty() == false) {
                             // Routing alias
                             if (routings == null) {
                                 routings = new HashMap<>();

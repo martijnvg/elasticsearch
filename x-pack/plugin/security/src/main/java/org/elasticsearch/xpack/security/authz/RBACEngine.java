@@ -532,8 +532,23 @@ public class RBACEngine implements AuthorizationEngine {
         // TODO: can this be done smarter? I think there are usually more indices/aliases in the cluster then indices defined a roles?
         for (Map.Entry<String, IndexAbstraction> entry : lookup.entrySet()) {
             IndexAbstraction indexAbstraction = entry.getValue();
+            // TODO: do differently: for each authorized data stream see if there is an associated data stream alias and
+            //  include that as well:
+            if (indexAbstraction instanceof IndexAbstraction.DataStreamAlias) {
+                IndexAbstraction.DataStreamAlias dataStreamAlias = (IndexAbstraction.DataStreamAlias) indexAbstraction;
+                for (String dataStreamName : dataStreamAlias.getDataStreamAlias().getDataStreams()) {
+                    IndexAbstraction dataStream = lookup.get(dataStreamName);
+                    if (predicate.test(dataStream)) {
+                        indicesAndAliases.add(dataStream.getName());
+                        indicesAndAliases.addAll(dataStream.getIndices().stream()
+                            .map(i -> i.getIndex().getName()).collect(Collectors.toList()));
+                    }
+                }
+                continue;
+            }
+
             if (predicate.test(indexAbstraction)) {
-                if (indexAbstraction.getType() != IndexAbstraction.Type.DATA_STREAM) {
+                if (isDataStreamRelated(indexAbstraction) == false) {
                     indicesAndAliases.add(indexAbstraction.getName());
                 } else if (includeDataStreams) {
                     // add data stream and its backing indices for any authorized data streams
@@ -543,7 +558,13 @@ public class RBACEngine implements AuthorizationEngine {
                 }
             }
         }
-        return Collections.unmodifiableList(new ArrayList<>(indicesAndAliases));
+        logger.info("indicesAndAliases={}", indicesAndAliases);
+        return List.copyOf(indicesAndAliases);
+    }
+
+    static boolean isDataStreamRelated(IndexAbstraction ia) {
+        return ia.getType() == IndexAbstraction.Type.DATA_STREAM;// ||
+//            ia instanceof IndexAbstraction.DataStreamAlias;
     }
 
     private void buildIndicesAccessControl(Authentication authentication, String action,

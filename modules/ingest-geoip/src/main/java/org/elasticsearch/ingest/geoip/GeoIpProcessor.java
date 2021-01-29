@@ -386,16 +386,16 @@ public final class GeoIpProcessor extends AbstractProcessor {
             Property.IP, Property.ASN, Property.ORGANIZATION_NAME, Property.NETWORK
         ));
 
-        private final Map<String, DatabaseReaderLazyLoader> databaseReaders;
+        private final DatabaseRegistry databaseRegistry;
 
         Map<String, DatabaseReaderLazyLoader> databaseReaders() {
-            return Collections.unmodifiableMap(databaseReaders);
+            return databaseRegistry.getAllDatabases();
         }
 
         private final GeoIpCache cache;
 
-        public Factory(Map<String, DatabaseReaderLazyLoader> databaseReaders, GeoIpCache cache) {
-            this.databaseReaders = databaseReaders;
+        public Factory(DatabaseRegistry databaseRegistry, GeoIpCache cache) {
+            this.databaseRegistry = databaseRegistry;
             this.cache = cache;
         }
 
@@ -410,8 +410,9 @@ public final class GeoIpProcessor extends AbstractProcessor {
             List<String> propertyNames = readOptionalList(TYPE, processorTag, config, "properties");
             boolean ignoreMissing = readBooleanProperty(TYPE, processorTag, config, "ignore_missing", false);
             boolean firstOnly = readBooleanProperty(TYPE, processorTag, config, "first_only", true);
+            boolean fallBackToBuiltinDatabases = readBooleanProperty(TYPE, processorTag, config, "fallback_to_builtin_databases", true);
 
-            DatabaseReaderLazyLoader lazyLoader = databaseReaders.get(databaseFile);
+            DatabaseReaderLazyLoader lazyLoader = databaseRegistry.getDatabase(databaseFile, fallBackToBuiltinDatabases);
             if (lazyLoader == null) {
                 throw newConfigurationException(TYPE, processorTag,
                     "database_file", "database file [" + databaseFile + "] doesn't exist");

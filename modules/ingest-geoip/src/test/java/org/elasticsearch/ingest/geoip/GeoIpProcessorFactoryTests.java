@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.ingest.geoip;
 
 import com.carrotsearch.randomizedtesting.generators.RandomPicks;
@@ -50,7 +49,7 @@ import static org.hamcrest.Matchers.sameInstance;
 
 public class GeoIpProcessorFactoryTests extends ESTestCase {
 
-    private static Map<String, DatabaseReaderLazyLoader> databaseReaders;
+    private static DatabaseRegistry databaseRegistry;
 
     @BeforeClass
     public static void loadDatabaseReaders() throws IOException {
@@ -60,19 +59,17 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         Files.createDirectories(geoIpConfigDir);
         copyDatabaseFiles(geoIpDir);
 
-        databaseReaders = IngestGeoIpPlugin.loadDatabaseReaders(geoIpDir, geoIpConfigDir);
+        databaseRegistry = new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null);
     }
 
     @AfterClass
     public static void closeDatabaseReaders() throws IOException {
-        for (DatabaseReaderLazyLoader reader : databaseReaders.values()) {
-            reader.close();
-        }
-        databaseReaders = null;
+        databaseRegistry.close();
+        databaseRegistry = null;
     }
 
     public void testBuildDefaults() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
 
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
@@ -88,7 +85,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testSetIgnoreMissing() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
 
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
@@ -105,7 +102,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testCountryBuildDefaults() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
 
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
@@ -123,7 +120,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testAsnBuildDefaults() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
 
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
@@ -141,7 +138,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testBuildTargetField() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         config.put("target_field", "_field");
@@ -152,7 +149,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testBuildDbFile() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         config.put("database_file", "GeoLite2-Country.mmdb");
@@ -165,7 +162,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testBuildWithCountryDbAndAsnFields() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         config.put("database_file", "GeoLite2-Country.mmdb");
@@ -179,7 +176,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testBuildWithAsnDbAndCityFields() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         config.put("database_file", "GeoLite2-ASN.mmdb");
@@ -193,7 +190,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testBuildNonExistingDbFile() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
 
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
@@ -203,7 +200,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testBuildFields() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
 
         Set<GeoIpProcessor.Property> properties = EnumSet.noneOf(GeoIpProcessor.Property.class);
         List<String> fieldNames = new ArrayList<>();
@@ -227,7 +224,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testBuildIllegalFieldOption() throws Exception {
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
 
         Map<String, Object> config1 = new HashMap<>();
         config1.put("field", "_field");
@@ -253,9 +250,9 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         // Loading another database reader instances, because otherwise we can't test lazy loading as the
         // database readers used at class level are reused between tests. (we want to keep that otherwise running this
         // test will take roughly 4 times more time)
-        Map<String, DatabaseReaderLazyLoader> databaseReaders = IngestGeoIpPlugin.loadDatabaseReaders(geoIpDir, geoIpConfigDir);
-        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
-        for (DatabaseReaderLazyLoader lazyLoader : databaseReaders.values()) {
+        DatabaseRegistry databaseRegistry = new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null);
+        GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
+        for (DatabaseReaderLazyLoader lazyLoader : databaseRegistry.getAllDatabases().values()) {
             assertNull(lazyLoader.databaseReader.get());
         }
 
@@ -268,10 +265,10 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         final GeoIpProcessor city = factory.create(null, "_tag", null, config);
 
         // these are lazy loaded until first use so we expect null here
-        assertNull(databaseReaders.get("GeoLite2-City.mmdb").databaseReader.get());
+        assertNull(databaseRegistry.getDatabase("GeoLite2-City.mmdb", true).databaseReader.get());
         city.execute(document);
         // the first ingest should trigger a database load
-        assertNotNull(databaseReaders.get("GeoLite2-City.mmdb").databaseReader.get());
+        assertNotNull(databaseRegistry.getDatabase("GeoLite2-City.mmdb", true).databaseReader.get());
 
         config = new HashMap<>();
         config.put("field", "_field");
@@ -279,10 +276,10 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         final GeoIpProcessor country = factory.create(null, "_tag", null, config);
 
         // these are lazy loaded until first use so we expect null here
-        assertNull(databaseReaders.get("GeoLite2-Country.mmdb").databaseReader.get());
+        assertNull(databaseRegistry.getDatabase("GeoLite2-Country.mmdb", true).databaseReader.get());
         country.execute(document);
         // the first ingest should trigger a database load
-        assertNotNull(databaseReaders.get("GeoLite2-Country.mmdb").databaseReader.get());
+        assertNotNull(databaseRegistry.getDatabase("GeoLite2-Country.mmdb", true).databaseReader.get());
 
         config = new HashMap<>();
         config.put("field", "_field");
@@ -290,10 +287,10 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         final GeoIpProcessor asn = factory.create(null, "_tag", null, config);
 
         // these are lazy loaded until first use so we expect null here
-        assertNull(databaseReaders.get("GeoLite2-ASN.mmdb").databaseReader.get());
+        assertNull(databaseRegistry.getDatabase("GeoLite2-ASN.mmdb", true).databaseReader.get());
         asn.execute(document);
         // the first ingest should trigger a database load
-        assertNotNull(databaseReaders.get("GeoLite2-ASN.mmdb").databaseReader.get());
+        assertNotNull(databaseRegistry.getDatabase("GeoLite2-ASN.mmdb", true).databaseReader.get());
     }
 
     public void testLoadingCustomDatabase() throws IOException {
@@ -310,9 +307,9 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
          * Loading another database reader instances, because otherwise we can't test lazy loading as the database readers used at class
          * level are reused between tests. (we want to keep that otherwise running this test will take roughly 4 times more time).
          */
-        final Map<String, DatabaseReaderLazyLoader> databaseReaders = IngestGeoIpPlugin.loadDatabaseReaders(geoIpDir, geoIpConfigDir);
-        final GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
-        for (DatabaseReaderLazyLoader lazyLoader : databaseReaders.values()) {
+        final DatabaseRegistry databaseRegistry = new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null);
+        final GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
+        for (DatabaseReaderLazyLoader lazyLoader : databaseRegistry.getAllDatabases().values()) {
             assertNull(lazyLoader.databaseReader.get());
         }
 
@@ -325,10 +322,10 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         final GeoIpProcessor city = factory.create(null, "_tag", null, config);
 
         // these are lazy loaded until first use so we expect null here
-        assertNull(databaseReaders.get("GeoIP2-City.mmdb").databaseReader.get());
+        assertNull(databaseRegistry.getDatabase("GeoIP2-City.mmdb", true).databaseReader.get());
         city.execute(document);
         // the first ingest should trigger a database load
-        assertNotNull(databaseReaders.get("GeoIP2-City.mmdb").databaseReader.get());
+        assertNotNull(databaseRegistry.getDatabase("GeoIP2-City.mmdb", true).databaseReader.get());
     }
 
     public void testDatabaseNotExistsInDir() throws IOException {
@@ -341,8 +338,8 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         copyDatabaseFiles(geoIpDir);
         final String databaseFilename = randomFrom(IngestGeoIpPlugin.DEFAULT_DATABASE_FILENAMES);
         Files.delete(geoIpDir.resolve(databaseFilename));
-        final IOException e =
-                expectThrows(IOException.class, () -> IngestGeoIpPlugin.loadDatabaseReaders(geoIpDir, geoIpConfigDir));
+        final IOException e = expectThrows(IOException.class,
+            () -> new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null));
         assertThat(e, hasToString(containsString("expected database [" + databaseFilename + "] to exist in [" + geoIpDir + "]")));
     }
 
@@ -354,8 +351,8 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         copyDatabaseFiles(geoIpDir);
         final String databaseFilename = randomFrom(IngestGeoIpPlugin.DEFAULT_DATABASE_FILENAMES);
         copyDatabaseFile(geoIpConfigDir, databaseFilename);
-        final IOException e =
-                expectThrows(IOException.class, () -> IngestGeoIpPlugin.loadDatabaseReaders(geoIpDir, geoIpConfigDir));
+        final IOException e = expectThrows(IOException.class,
+            () -> new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null));
         assertThat(e, hasToString(containsString("expected database [" + databaseFilename + "] to not exist in [" + geoIpConfigDir + "]")));
     }
 

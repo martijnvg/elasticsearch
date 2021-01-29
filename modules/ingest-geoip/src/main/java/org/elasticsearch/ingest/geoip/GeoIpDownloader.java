@@ -118,7 +118,7 @@ class GeoIpDownloader extends PersistentTasksExecutor<PersistentTaskParams> impl
                         }
                         map.put("data", httpClient.getBytes(url));
                         map.put("name", name);
-                        bulkRequestBuilder.add(new IndexRequest().id((String) map.get("name")).source(map));
+                        bulkRequestBuilder.add(new IndexRequest().id((String) map.get("name")).source(map, XContentType.SMILE));
                     }
                     if (bulkRequestBuilder.numberOfActions() > 0) {
                         bulkRequestBuilder.execute(ActionListener.wrap(bulkItemResponses -> {

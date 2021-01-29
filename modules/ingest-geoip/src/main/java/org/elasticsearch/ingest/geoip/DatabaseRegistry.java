@@ -28,6 +28,7 @@ import org.apache.logging.log4j.util.Supplier;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.client.OriginSettingClient;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.common.Booleans;
@@ -37,11 +38,14 @@ import org.elasticsearch.common.SuppressForbidden;
 import org.elasticsearch.common.io.PathUtils;
 import org.elasticsearch.core.internal.io.IOUtils;
 import org.elasticsearch.env.Environment;
-import org.elasticsearch.index.query.TermsQueryBuilder;
+import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.ingest.IngestService;
 import org.elasticsearch.ingest.PipelineConfiguration;
+import org.elasticsearch.persistent.PersistentTasksCustomMetadata;
 import org.elasticsearch.search.SearchHit;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
@@ -58,6 +62,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+import java.util.zip.GZIPInputStream;
 
 import static org.elasticsearch.ingest.geoip.IngestGeoIpPlugin.DEFAULT_DATABASE_FILENAMES;
 
@@ -71,15 +76,16 @@ public class DatabaseRegistry implements Closeable {
     private final Client client;
     private final Path geoipTmpDirectory;
     private final IngestService ingestService;
+    private final Consumer<Runnable> genericExecutor;
 
     private final Map<String, DatabaseReaderLazyLoader> builtinDatabases;
     private volatile Map<String, DatabaseReference> databases = Map.of();
 
-    public DatabaseRegistry(Environment environment, Client client, IngestService ingestService) throws IOException {
+    public DatabaseRegistry(Environment environment, Client client, IngestService ingestService, Consumer<Runnable> genericExecutor) throws IOException {
         this(
             // In GeoIpProcessorNonIngestNodeTests, ingest-geoip is loaded on the classpath.
             // This means that the plugin is never unbundled into a directory where the database files would live.
-            // Therefore, we have to copy these database files ourselves. To do this, we need the ability to specify  where
+            // Therefore, we have to copy these database files ourselves. To do this, we need the ability to specify where
             // those database files would go. We do this by adding a plugin that registers ingest.geoip.database_path as an
             // actual setting. Otherwise, in production code, this setting is not registered and the database path is not configurable.
             environment.settings().get("ingest.geoip.database_path") != null ?
@@ -88,18 +94,21 @@ public class DatabaseRegistry implements Closeable {
             environment.configFile().resolve("ingest-geoip"),
             environment.tmpFile(),
             client,
-            ingestService);
+            ingestService,
+            genericExecutor);
     }
 
     public DatabaseRegistry(Path geoipModuleDir,
                             Path geoipConfigDir,
                             Path tmpDir,
                             Client client,
-                            IngestService ingestService) throws IOException {
+                            IngestService ingestService,
+                            Consumer<Runnable> genericExecutor) throws IOException {
+        this.client = new OriginSettingClient(client, "geoip");
         this.geoipTmpDirectory = tmpDir.resolve("geoip-databases");
-        this.client = client;
         this.ingestService = ingestService;
         this.builtinDatabases = initBuiltinDatabases(geoipModuleDir, geoipConfigDir);
+        this.genericExecutor = genericExecutor;
     }
 
     public void initialize() throws IOException {
@@ -141,12 +150,30 @@ public class DatabaseRegistry implements Closeable {
             return;
         }
 
-        GeoipDatabasesMetadata geoipDatabasesMetadata = state.metadata().custom(GeoipDatabasesMetadata.TYPE);
-        if (geoipDatabasesMetadata == null) {
+        PersistentTasksCustomMetadata persistentTasks = state.metadata().custom(PersistentTasksCustomMetadata.TYPE);
+        if (persistentTasks == null) {
             return;
         }
 
-        for (var entry : geoipDatabasesMetadata.getLastUpdatesByDatabase().entrySet()) {
+        GeoIpDownloaderTaskState taskState = persistentTasks.findTasks(GeoIpDownloader.GEOIP_DOWNLOADER, task -> true).stream()
+            .filter(persistentTask -> persistentTask.getState() != null)
+            .map(persistentTask -> (GeoIpDownloaderTaskState) persistentTask.getState())
+            .findAny()
+            .orElse(null);
+
+        if (taskState == null) {
+            return;
+        }
+
+        // hack:
+        Date lastUpdated = new Date(taskState.getLastExecutionTime());
+        Map<String, Date> lastUpdatedByDatabase = Map.of(
+            "GeoLite2-ASN.mmdb", lastUpdated,
+            "GeoLite2-City.mmdb", lastUpdated,
+            "GeoLite2-Country.mmdb", lastUpdated
+        );
+
+        for (var entry : lastUpdatedByDatabase.entrySet()) {
             DatabaseReference reference = databases.get(entry.getKey());
             Date lastDownloaded = reference != null ? reference.lastDownloaded : null;
             if (lastDownloaded != null && lastDownloaded.compareTo(entry.getValue()) <= 0) {
@@ -162,7 +189,7 @@ public class DatabaseRegistry implements Closeable {
 
         List<String> staleEntries = new ArrayList<>();
         for (var entry : databases.entrySet()) {
-            if (geoipDatabasesMetadata.getLastUpdatesByDatabase().get(entry.getKey()) == null) {
+            if (lastUpdatedByDatabase.get(entry.getKey()) == null) {
                 staleEntries.add(entry.getKey());
             }
         }
@@ -177,15 +204,18 @@ public class DatabaseRegistry implements Closeable {
             LOGGER.debug("database update [{}] already in progress", databaseName);
             return;
         }
+        LOGGER.info("downloading geoip database [{}] to [{}]", databaseName, databaseTmpFile);
         retrieveDatabase(
             databaseName,
             bytes -> Files.write(databaseTmpFile, bytes, StandardOpenOption.APPEND),
             () -> {
                 Path databaseFile = geoipTmpDirectory.resolve(databaseName);
+                LOGGER.info("moving database from [{}] to [{}]", databaseTmpFile, databaseFile);
                 Files.move(databaseTmpFile, databaseFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
                 updateDatabase(databaseName, databaseFile, state);
             },
             failure -> {
+                LOGGER.error((Supplier<?>) () -> new ParameterizedMessage("failed to download database [{}]", databaseName), failure);
                 try {
                     Files.delete(databaseTmpFile);
                 } catch (IOException ioe) {
@@ -235,27 +265,56 @@ public class DatabaseRegistry implements Closeable {
                           CheckedRunnable<Exception> completedHandler,
                           Consumer<Exception> failureHandler,
                           Integer seq) {
-        SearchRequest searchRequest = new SearchRequest();
-        searchRequest.source().query(new TermsQueryBuilder("file_name", databaseName));
-        searchRequest.source().sort("sequence");
+        SearchRequest searchRequest = new SearchRequest(GeoIpDownloader.DATABASES_INDEX);
+        searchRequest.source().query(new TermQueryBuilder("name", databaseName));
+//        searchRequest.source().sort("sequence");
         searchRequest.source().size(1);
         if (seq != null) {
             searchRequest.source().searchAfter(new Object[]{seq});
         }
-        client.search(searchRequest, ActionListener.wrap(
-            searchResponse -> {
-                if (searchResponse.getHits().getHits().length == 0) {
-                    completedHandler.run();
-                } else {
+        // Need to run the search from a different thread, since this can be executed from cluster state applier thread:
+        // (forking has minimal overhead, because we immediately execute a search)
+        genericExecutor.accept(() -> {
+            client.search(searchRequest, ActionListener.wrap(
+                searchResponse -> {
                     assert searchResponse.getHits().getHits().length == 1;
                     SearchHit searchHit = searchResponse.getHits().getHits()[0];
                     byte[] data = (byte[]) searchHit.getSourceAsMap().get("data");
+                    data = sillyHackyDecompress(data);
+
                     chunkConsumer.accept(data);
-                    retrieveDatabase(databaseName, chunkConsumer, completedHandler, failureHandler, (Integer) searchHit.getSortValues()[0]);
-                }
-            },
-            failureHandler)
-        );
+                    completedHandler.run();
+//                if (searchResponse.getHits().getHits().length == 0) {
+//                    completedHandler.run();
+//                } else {
+//                    assert searchResponse.getHits().getHits().length == 1;
+//                    SearchHit searchHit = searchResponse.getHits().getHits()[0];
+//                    byte[] data = (byte[]) searchHit.getSourceAsMap().get("data");
+//                    chunkConsumer.accept(data);
+//                    retrieveDatabase(databaseName, chunkConsumer, completedHandler, failureHandler, (Integer) searchHit.getSortValues()[0]);
+//                }
+                },
+                failureHandler)
+            );
+        });
+    }
+
+    // we should do this at least in a streaming manner:
+    private byte[] sillyHackyDecompress(byte[] compressed) throws IOException {
+
+        GZIPInputStream gzipper = new GZIPInputStream(new ByteArrayInputStream(compressed));
+
+        byte[] buffer = new byte[1024];
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        int len;
+        while ((len = gzipper.read(buffer)) > 0) {
+            out.write(buffer, 0, len);
+        }
+
+        gzipper.close();
+        out.close();
+        return out.toByteArray();
     }
 
     void reloadIngestPipelines(String databaseName, ClusterState state) throws Exception {

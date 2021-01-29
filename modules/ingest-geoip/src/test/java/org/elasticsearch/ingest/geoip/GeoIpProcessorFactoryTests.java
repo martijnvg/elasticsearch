@@ -59,7 +59,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         Files.createDirectories(geoIpConfigDir);
         copyDatabaseFiles(geoIpDir);
 
-        databaseRegistry = new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null);
+        databaseRegistry = new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null, Runnable::run);
     }
 
     @AfterClass
@@ -250,7 +250,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         // Loading another database reader instances, because otherwise we can't test lazy loading as the
         // database readers used at class level are reused between tests. (we want to keep that otherwise running this
         // test will take roughly 4 times more time)
-        DatabaseRegistry databaseRegistry = new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null);
+        DatabaseRegistry databaseRegistry = new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null, Runnable::run);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
         for (DatabaseReaderLazyLoader lazyLoader : databaseRegistry.getAllDatabases().values()) {
             assertNull(lazyLoader.databaseReader.get());
@@ -307,7 +307,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
          * Loading another database reader instances, because otherwise we can't test lazy loading as the database readers used at class
          * level are reused between tests. (we want to keep that otherwise running this test will take roughly 4 times more time).
          */
-        final DatabaseRegistry databaseRegistry = new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null);
+        final DatabaseRegistry databaseRegistry = new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null, Runnable::run);
         final GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry, new GeoIpCache(1000));
         for (DatabaseReaderLazyLoader lazyLoader : databaseRegistry.getAllDatabases().values()) {
             assertNull(lazyLoader.databaseReader.get());
@@ -339,7 +339,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         final String databaseFilename = randomFrom(IngestGeoIpPlugin.DEFAULT_DATABASE_FILENAMES);
         Files.delete(geoIpDir.resolve(databaseFilename));
         final IOException e = expectThrows(IOException.class,
-            () -> new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null));
+            () -> new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null, Runnable::run));
         assertThat(e, hasToString(containsString("expected database [" + databaseFilename + "] to exist in [" + geoIpDir + "]")));
     }
 
@@ -352,7 +352,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         final String databaseFilename = randomFrom(IngestGeoIpPlugin.DEFAULT_DATABASE_FILENAMES);
         copyDatabaseFile(geoIpConfigDir, databaseFilename);
         final IOException e = expectThrows(IOException.class,
-            () -> new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null));
+            () -> new DatabaseRegistry(geoIpDir, geoIpConfigDir, createTempDir(), null, null, Runnable::run));
         assertThat(e, hasToString(containsString("expected database [" + databaseFilename + "] to not exist in [" + geoIpConfigDir + "]")));
     }
 

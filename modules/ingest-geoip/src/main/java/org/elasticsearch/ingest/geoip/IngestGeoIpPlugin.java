@@ -78,7 +78,9 @@ public class IngestGeoIpPlugin extends Plugin implements IngestPlugin, SystemInd
 
     @Override
     public Map<String, Processor.Factory> getProcessors(Processor.Parameters parameters) {
-        long cacheSize = CACHE_SIZE.get(parameters.env.settings());
+        // TODO: Disable cache for now. It should be moved from geoip processor to the database registry.
+        // (to have one cache for all db files and purge all cache entries for files that have been updated/removed)
+        long cacheSize = 0; //CACHE_SIZE.get(parameters.env.settings());
         try {
             DatabaseRegistry registry =
                 new DatabaseRegistry(parameters.env, parameters.client, parameters.ingestService, parameters.genericExecutor);

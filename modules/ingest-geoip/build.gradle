@@ -28,8 +28,9 @@ esplugin {
 }
 
 dependencies {
-  compileOnly "org.apache.httpcomponents:httpclient:${versions.httpclient}"
-  compileOnly "org.apache.httpcomponents:httpcore:${versions.httpcore}"
+  api "org.apache.httpcomponents:httpclient:${versions.httpclient}"
+  api "org.apache.httpcomponents:httpcore:${versions.httpcore}"
+  api "commons-logging:commons-logging:${versions.commonslogging}" // dep of http client
   api('com.maxmind.geoip2:geoip2:2.13.1')
   // geoip2 dependencies:
   api("com.fasterxml.jackson.core:jackson-annotations:${versions.jackson}")
@@ -71,4 +72,22 @@ if (Os.isFamily(Os.FAMILY_WINDOWS)) {
     // See https://github.com/maxmind/MaxMind-DB-Reader-java#file-lock-on-windows for more information
     systemProperty 'es.geoip.load_db_on_heap', 'true'
   }
+}
+
+tasks.named("thirdPartyAudit").configure {
+  ignoreMissingClasses(
+    //commons-codec optional dependencies
+    'org.apache.commons.codec.binary.Base64',
+    //commons-logging optional dependencies
+    'org.apache.avalon.framework.logger.Logger',
+    'org.apache.log.Hierarchy',
+    'org.apache.log.Logger',
+    'org.apache.log4j.Category',
+    'org.apache.log4j.Level',
+    'org.apache.log4j.Logger',
+    'org.apache.log4j.Priority',
+    //commons-logging provided dependencies
+    'javax.servlet.ServletContextEvent',
+    'javax.servlet.ServletContextListener'
+  )
 }

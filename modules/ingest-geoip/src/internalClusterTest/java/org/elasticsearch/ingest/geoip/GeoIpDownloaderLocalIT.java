@@ -23,6 +23,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.support.IndicesOptions;
+import org.elasticsearch.common.SuppressForbidden;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.mocksocket.MockHttpServer;
 import org.elasticsearch.plugins.Plugin;
@@ -38,11 +39,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @ClusterScope(scope = Scope.TEST)
+@SuppressForbidden(reason = "fix test to not use com.sun.net.httpserver.HttpServer, which isn't portable on all JVMs")
 public class GeoIpDownloaderLocalIT extends AbstractGeoIpIT {
 
     private static HttpServer mockServer;
@@ -62,7 +65,7 @@ public class GeoIpDownloaderLocalIT extends AbstractGeoIpIT {
 
     private static String getServerAddress() {
         InetSocketAddress address = mockServer.getAddress();
-        return String.format("http://%s:%d", address.getHostName(), address.getPort());
+        return String.format(Locale.ROOT, "http://%s:%d", address.getHostName(), address.getPort());
     }
 
     @BeforeClass

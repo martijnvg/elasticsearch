@@ -74,8 +74,7 @@ class GeoIpDownloader extends PersistentTasksExecutor<PersistentTaskParams> impl
     private volatile TimeValue pollInterval;
     private volatile String endpoint;
 
-    public GeoIpDownloader(Client client, HttpClient httpClient, ClusterService clusterService, ThreadPool threadPool,
-                           Settings settings) {
+    GeoIpDownloader(Client client, HttpClient httpClient, ClusterService clusterService, ThreadPool threadPool, Settings settings) {
         super(GEOIP_DOWNLOADER, ThreadPool.Names.GENERIC);
         this.client = new OriginSettingClient(client, "geoip");
         this.httpClient = httpClient;

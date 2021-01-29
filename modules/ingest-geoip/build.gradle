@@ -28,8 +28,8 @@ esplugin {
 }
 
 dependencies {
-  api "org.apache.httpcomponents:httpclient:${versions.httpclient}"
-  api "org.apache.httpcomponents:httpcore:${versions.httpcore}"
+  compileOnly "org.apache.httpcomponents:httpclient:${versions.httpclient}"
+  compileOnly "org.apache.httpcomponents:httpcore:${versions.httpcore}"
   api('com.maxmind.geoip2:geoip2:2.13.1')
   // geoip2 dependencies:
   api("com.fasterxml.jackson.core:jackson-annotations:${versions.jackson}")

@@ -35,8 +35,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import static org.elasticsearch.test.NodeRoles.nonIngestNode;
-
 public abstract class AbstractGeoIpIT extends ESIntegTestCase {
     @Override
     protected Collection<Class<? extends Plugin>> nodePlugins() {

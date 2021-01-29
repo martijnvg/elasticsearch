@@ -98,7 +98,7 @@ public class GeoIpDownloaderTests extends ESTestCase {
 
     private static class MockClient extends NoOpClient {
 
-        public MockClient(String testName) {
+        private MockClient(String testName) {
             super(testName);
         }
 

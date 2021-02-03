@@ -11,6 +11,8 @@ package org.elasticsearch.ingest;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
+import org.apache.logging.log4j.util.Supplier;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.ResourceNotFoundException;
@@ -688,7 +690,7 @@ public class IngestService implements ClusterStateApplier, ReportingService<Inge
         }
     }
 
-    void innerUpdatePipelines(IngestMetadata newIngestMetadata) {
+    synchronized void innerUpdatePipelines(IngestMetadata newIngestMetadata) {
         Map<String, PipelineHolder> existingPipelines = this.pipelines;
 
         // Lazy initialize these variables in order to favour the most like scenario that there are no pipeline changes:
@@ -781,6 +783,36 @@ public class IngestService implements ClusterStateApplier, ReportingService<Inge
         }
     }
 
+    public synchronized void reloadPipelines(List<String> pipelineIDs) throws Exception {
+        if (pipelineIDs.isEmpty()) {
+            return;
+        }
+
+        Map<String, PipelineHolder> existingPipelines = this.pipelines;
+        Map<String, PipelineHolder> newPipelines = new HashMap<>(this.pipelines);
+        for (String pipelineID : pipelineIDs) {
+            PipelineHolder previousInstance = existingPipelines.get(pipelineID);
+            Pipeline reloadedInstance;
+            try {
+                reloadedInstance =
+                    Pipeline.create(pipelineID, previousInstance.configuration.getConfigAsMap(), processorFactories, scriptService);
+            } catch (Exception e) {
+                logger.error((Supplier<?>) () -> new ParameterizedMessage("failed to reload pipeline [{}]", pipelineID), e);
+                ElasticsearchParseException parseException;
+                if (e instanceof ElasticsearchParseException) {
+                    parseException = (ElasticsearchParseException) e;
+                } else {
+                    parseException = new ElasticsearchParseException("Error reloading pipeline with id [{}]", e, pipelineID);
+                }
+                reloadedInstance = substitutePipeline(pipelineID, parseException);
+            }
+            PipelineHolder previous = newPipelines.put(pipelineID, new PipelineHolder(previousInstance.configuration, reloadedInstance));
+            assert previous != null;
+        }
+
+        this.pipelines = Map.copyOf(newPipelines);
+    }
+
     /**
      * Gets all the Processors of the given type from within a Pipeline.
      * @param pipelineId the pipeline to inspect
@@ -817,22 +849,46 @@ public class IngestService implements ClusterStateApplier, ReportingService<Inge
     }
 
     private static Pipeline substitutePipeline(String id, ElasticsearchParseException e) {
-        String tag = e.getHeaderKeys().contains("processor_tag") ? e.getHeader("processor_tag").get(0) : null;
-        String type = e.getHeaderKeys().contains("processor_type") ? e.getHeader("processor_type").get(0) : "unknown";
-        String errorMessage = "pipeline with id [" + id + "] could not be loaded, caused by [" + e.getDetailedMessage() + "]";
-        Processor failureProcessor = new AbstractProcessor(tag, "this is a placeholder processor") {
-            @Override
-            public IngestDocument execute(IngestDocument ingestDocument) {
-                throw new IllegalStateException(errorMessage);
-            }
-
-            @Override
-            public String getType() {
-                return type;
-            }
-        };
+        Processor failureProcessor = new FailureProcessor(id, e);
         String description = "this is a place holder pipeline, because pipeline with id [" +  id + "] could not be loaded";
         return new Pipeline(id, description, null, new CompoundProcessor(failureProcessor));
+    }
+
+    /**
+     * A processor used to substitute all processors in a pipeline in order to allow the pipeline to be accessible,
+     * but encapsulates the error that caused the processor that is part of this pipeline from failing to load.
+     * This error is returned each time this pipeline is used.
+     */
+    public static class FailureProcessor extends AbstractProcessor {
+
+        private final String id;
+        private final ElasticsearchParseException exception;
+
+        public FailureProcessor(String id, ElasticsearchParseException exception) {
+            super(
+                exception.getMetadataKeys().contains("es.processor_tag") ? exception.getMetadata("es.processor_tag").get(0) : null,
+                "this is a placeholder processor"
+            );
+            this.id = id;
+            this.exception = exception;
+        }
+
+        @Override
+        public IngestDocument execute(IngestDocument ingestDocument) throws Exception {
+            String errorMessage = "this is a place holder pipeline, because pipeline with id [" +  id + "] could not be loaded";
+            throw new ElasticsearchException(errorMessage, exception);
+        }
+
+        @Override
+        public String getType() {
+            return exception.getMetadataKeys().contains("es.processor_type") ?
+                exception.getMetadata("es.processor_type").get(0) : "unknown";
+        }
+
+        public String getProperty() {
+            return exception.getMetadataKeys().contains("es.property_name") ?
+                exception.getMetadata("es.property_name").get(0) : "unknown";
+        }
     }
 
     static class PipelineHolder {

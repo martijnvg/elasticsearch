@@ -26,7 +26,6 @@ import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.ingest.IngestService;
-import org.elasticsearch.ingest.PipelineConfiguration;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.watcher.ResourceWatcherService;
@@ -55,7 +54,6 @@ final class DatabaseRegistry implements Closeable {
     private final Client client;
     private final GeoIpCache cache;
     private final Path geoipTmpDirectory;
-    private final IngestService ingestService;
     private final LocalDatabases localDatabases;
     private final Consumer<Runnable> genericExecutor;
 
@@ -64,14 +62,12 @@ final class DatabaseRegistry implements Closeable {
     DatabaseRegistry(Environment environment,
                      Client client,
                      GeoIpCache cache,
-                     IngestService ingestService,
                      Consumer<Runnable> genericExecutor) {
         this(
             environment.tmpFile(),
             client,
             cache,
-            ingestService,
-            new LocalDatabases(environment, cache, ingestService),
+            new LocalDatabases(environment, cache),
             genericExecutor
         );
     }
@@ -79,19 +75,17 @@ final class DatabaseRegistry implements Closeable {
     DatabaseRegistry(Path tmpDir,
                      Client client,
                      GeoIpCache cache,
-                     IngestService ingestService,
                      LocalDatabases localDatabases,
                      Consumer<Runnable> genericExecutor) {
         this.client = new OriginSettingClient(client, "geoip");
         this.cache = cache;
         this.geoipTmpDirectory = tmpDir.resolve("geoip-databases");
-        this.ingestService = ingestService;
         this.localDatabases = localDatabases;
         this.genericExecutor = genericExecutor;
     }
 
-    public void initialize(ResourceWatcherService resourceWatcher, Supplier<ClusterState> clusterStateSupplier) throws IOException {
-        localDatabases.initialize(resourceWatcher, clusterStateSupplier);
+    public void initialize(ResourceWatcherService resourceWatcher, IngestService ingestService) throws IOException {
+        localDatabases.initialize(resourceWatcher);
         if (Files.exists(geoipTmpDirectory)) {
             Files.walk(geoipTmpDirectory)
                 .filter(Files::isRegularFile)
@@ -169,7 +163,7 @@ final class DatabaseRegistry implements Closeable {
             }
 
             try {
-                retrieveAndUpdateDatabase(name, metadata, state);
+                retrieveAndUpdateDatabase(name, metadata);
             } catch (Exception e) {
                 LOGGER.error((Supplier<?>) () -> new ParameterizedMessage("attempt to download database [{}]", name), e);
             }
@@ -181,10 +175,10 @@ final class DatabaseRegistry implements Closeable {
                 staleEntries.add(entry.getKey());
             }
         }
-        removeStaleEntries(staleEntries, state);
+        removeStaleEntries(staleEntries);
     }
 
-    void retrieveAndUpdateDatabase(String databaseName, GeoIpTaskState.Metadata metadata, ClusterState state) throws IOException {
+    void retrieveAndUpdateDatabase(String databaseName, GeoIpTaskState.Metadata metadata) throws IOException {
         final Path databaseTmpGzFile;
         try {
             databaseTmpGzFile = Files.createFile(geoipTmpDirectory.resolve(databaseName + ".tmp.gz"));
@@ -206,7 +200,7 @@ final class DatabaseRegistry implements Closeable {
                 Path databaseFile = geoipTmpDirectory.resolve(databaseName);
                 LOGGER.debug("moving database from [{}] to [{}]", databaseTmpFile, databaseFile);
                 Files.move(databaseTmpFile, databaseFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                updateDatabase(databaseName, databaseFile, state);
+                updateDatabase(databaseName, databaseFile);
                 Files.delete(databaseTmpGzFile);
             },
             failure -> {
@@ -222,14 +216,13 @@ final class DatabaseRegistry implements Closeable {
             null);
     }
 
-    void updateDatabase(String databaseFileName, Path file, ClusterState state) {
+    void updateDatabase(String databaseFileName, Path file) {
         try {
             Map<String, DatabaseReference> databases = new HashMap<>(this.databases);
             LOGGER.info("database file changed [{}], reload database...", file);
             DatabaseReaderLazyLoader loader = new DatabaseReaderLazyLoader(cache, file);
             DatabaseReference existing = databases.put(databaseFileName, new DatabaseReference(new Date(), file, loader));
             this.databases = Map.copyOf(databases);
-            reloadIngestPipelines(databaseFileName, state);
             if (existing != null) {
                 existing.close();
                 int numEntriesEvicted = cache.purgeCacheEntriesForDatabase(existing.databaseFile);
@@ -240,7 +233,7 @@ final class DatabaseRegistry implements Closeable {
         }
     }
 
-    void removeStaleEntries(Collection<String> staleEntries, ClusterState state) {
+    void removeStaleEntries(Collection<String> staleEntries) {
         try {
             Map<String, DatabaseReference> databases = new HashMap<>(this.databases);
             List<DatabaseReference> references = new ArrayList<>();
@@ -253,7 +246,6 @@ final class DatabaseRegistry implements Closeable {
             this.databases = Map.copyOf(databases);
 
             for (DatabaseReference reference : references) {
-                reloadIngestPipelines(reference.databaseFile.getFileName().toString(), state);
                 reference.close();
                 Files.delete(reference.databaseFile);
                 cache.purgeCacheEntriesForDatabase(reference.databaseFile);
@@ -305,36 +297,6 @@ final class DatabaseRegistry implements Closeable {
         try (GZIPInputStream in = new GZIPInputStream(Files.newInputStream(source), 8192)) {
             Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
         }
-    }
-
-    void reloadIngestPipelines(String databaseName, ClusterState state) throws Exception {
-        List<String> pipelinesToReload = findPipelines(databaseName, state, ingestService);
-        LOGGER.info("reloading pipelines [{}], because database [{}] changed", pipelinesToReload, databaseName);
-        ingestService.reloadPipelines(pipelinesToReload);
-    }
-
-    static List<String> findPipelines(String databaseName, ClusterState state, IngestService ingestService) {
-        List<PipelineConfiguration> pipelines = IngestService.getPipelines(state);
-        List<String> pipelinesToReload = new ArrayList<>();
-        for (var pipeline : pipelines) {
-            List<GeoIpProcessor> processors = ingestService.getProcessorsInPipeline(pipeline.getId(), GeoIpProcessor.class);
-            if (processors.isEmpty() == false) {
-                // TODO: also check for used database and only reload pipelines with updated database
-                pipelinesToReload.add(pipeline.getId());
-            } else {
-                // Also check for pipelines with geoip processors that failed to load the database before:
-                List<IngestService.FailureProcessor> failureProcessors =
-                    ingestService.getProcessorsInPipeline(pipeline.getId(), IngestService.FailureProcessor.class);
-                if (failureProcessors.isEmpty() == false) {
-                    assert failureProcessors.size() == 1;
-                    if (failureProcessors.get(0).getType().equals(GeoIpProcessor.TYPE) &&
-                        failureProcessors.get(0).getProperty().equals("database_file")) {
-                        pipelinesToReload.add(pipeline.getId());
-                    }
-                }
-            }
-        }
-        return pipelinesToReload;
     }
 
     static final class DatabaseReference implements Closeable {

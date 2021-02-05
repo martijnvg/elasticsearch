@@ -299,12 +299,12 @@ public class GeoIpProcessorTests extends ESTestCase {
         assertThat(ingestDocument.getSourceAndMetadata().containsKey("target_field"), is(false));
     }
 
-    private DatabaseReaderLazyLoader loader(final String path) {
+    private CheckedSupplier<DatabaseReaderLazyLoader, IOException> loader(final String path) {
         final Supplier<InputStream> databaseInputStreamSupplier = () -> GeoIpProcessor.class.getResourceAsStream(path);
         final CheckedSupplier<DatabaseReader, IOException> loader =
                 () -> new DatabaseReader.Builder(databaseInputStreamSupplier.get()).build();
         final GeoIpCache cache = new GeoIpCache(1000);
-        return new DatabaseReaderLazyLoader(cache, PathUtils.get(path), loader) {
+        DatabaseReaderLazyLoader lazyLoader = new DatabaseReaderLazyLoader(cache, PathUtils.get(path), loader) {
 
             @Override
             long databaseFileSize() throws IOException {
@@ -326,6 +326,7 @@ public class GeoIpProcessorTests extends ESTestCase {
             }
 
         };
+        return () -> lazyLoader;
     }
 
 }

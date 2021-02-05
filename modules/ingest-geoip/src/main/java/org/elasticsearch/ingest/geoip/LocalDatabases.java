@@ -11,11 +11,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.apache.logging.log4j.util.Supplier;
-import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.common.SuppressForbidden;
 import org.elasticsearch.common.io.PathUtils;
 import org.elasticsearch.env.Environment;
-import org.elasticsearch.ingest.IngestService;
 import org.elasticsearch.watcher.FileChangesListener;
 import org.elasticsearch.watcher.FileWatcher;
 import org.elasticsearch.watcher.ResourceWatcherService;
@@ -26,11 +24,9 @@ import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
-import static org.elasticsearch.ingest.geoip.DatabaseRegistry.findPipelines;
 import static org.elasticsearch.ingest.geoip.IngestGeoIpPlugin.DEFAULT_DATABASE_FILENAMES;
 
 /**
@@ -45,13 +41,11 @@ final class LocalDatabases {
 
     private final GeoIpCache cache;
     private final Path geoipConfigDir;
-    private final IngestService ingestService;
-    private Supplier<ClusterState> clusterStateSupplier;
 
     private final Map<String, DatabaseReaderLazyLoader> defaultDatabases;
     private volatile Map<String, DatabaseReaderLazyLoader> configDatabases;
 
-    LocalDatabases(Environment environment, GeoIpCache cache, IngestService ingestService) {
+    LocalDatabases(Environment environment, GeoIpCache cache) {
         this(
             // In GeoIpProcessorNonIngestNodeTests, ingest-geoip is loaded on the classpath.
             // This means that the plugin is never unbundled into a directory where the database files would live.
@@ -62,20 +56,17 @@ final class LocalDatabases {
                 getGeoipConfigDirectory(environment) :
                 environment.modulesFile().resolve("ingest-geoip"),
             environment.configFile().resolve("ingest-geoip"),
-            cache,
-            ingestService);
+            cache);
     }
 
-    LocalDatabases(Path geoipModuleDir, Path geoipConfigDir, GeoIpCache cache, IngestService ingestService) {
+    LocalDatabases(Path geoipModuleDir, Path geoipConfigDir, GeoIpCache cache) {
         this.cache = cache;
-        this.ingestService = ingestService;
         this.geoipConfigDir = geoipConfigDir;
         this.configDatabases = Map.of();
         this.defaultDatabases = initDefaultDatabases(geoipModuleDir);
     }
 
-    void initialize(ResourceWatcherService resourceWatcher, Supplier<ClusterState> clusterStateSupplier) throws IOException {
-        this.clusterStateSupplier = clusterStateSupplier;
+    void initialize(ResourceWatcherService resourceWatcher) throws IOException {
         configDatabases = initConfigDatabases(geoipConfigDir);
 
         FileWatcher watcher = new FileWatcher(geoipConfigDir);
@@ -119,11 +110,6 @@ final class LocalDatabases {
                 existing.close();
             }
             this.configDatabases = Map.copyOf(databases);
-
-            List<String> pipelinesToReload = findPipelines(databaseFileName, clusterStateSupplier.get(), ingestService);
-            LOGGER.debug("reloading pipelines [{}], because database [{}] changed", pipelinesToReload, databaseFileName);
-            ingestService.reloadPipelines(pipelinesToReload);
-
         } catch (Exception e) {
             LOGGER.error((Supplier<?>) () -> new ParameterizedMessage("failed to update database [{}]", databaseFileName), e);
         }

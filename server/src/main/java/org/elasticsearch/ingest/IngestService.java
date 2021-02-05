@@ -690,7 +690,7 @@ public class IngestService implements ClusterStateApplier, ReportingService<Inge
         }
     }
 
-    synchronized void innerUpdatePipelines(IngestMetadata newIngestMetadata) {
+    void innerUpdatePipelines(IngestMetadata newIngestMetadata) {
         Map<String, PipelineHolder> existingPipelines = this.pipelines;
 
         // Lazy initialize these variables in order to favour the most like scenario that there are no pipeline changes:
@@ -781,36 +781,6 @@ public class IngestService implements ClusterStateApplier, ReportingService<Inge
                 ExceptionsHelper.rethrowAndSuppress(exceptions);
             }
         }
-    }
-
-    public synchronized void reloadPipelines(List<String> pipelineIDs) throws Exception {
-        if (pipelineIDs.isEmpty()) {
-            return;
-        }
-
-        Map<String, PipelineHolder> existingPipelines = this.pipelines;
-        Map<String, PipelineHolder> newPipelines = new HashMap<>(this.pipelines);
-        for (String pipelineID : pipelineIDs) {
-            PipelineHolder previousInstance = existingPipelines.get(pipelineID);
-            Pipeline reloadedInstance;
-            try {
-                reloadedInstance =
-                    Pipeline.create(pipelineID, previousInstance.configuration.getConfigAsMap(), processorFactories, scriptService);
-            } catch (Exception e) {
-                logger.error((Supplier<?>) () -> new ParameterizedMessage("failed to reload pipeline [{}]", pipelineID), e);
-                ElasticsearchParseException parseException;
-                if (e instanceof ElasticsearchParseException) {
-                    parseException = (ElasticsearchParseException) e;
-                } else {
-                    parseException = new ElasticsearchParseException("Error reloading pipeline with id [{}]", e, pipelineID);
-                }
-                reloadedInstance = substitutePipeline(pipelineID, parseException);
-            }
-            PipelineHolder previous = newPipelines.put(pipelineID, new PipelineHolder(previousInstance.configuration, reloadedInstance));
-            assert previous != null;
-        }
-
-        this.pipelines = Map.copyOf(newPipelines);
     }
 
     /**

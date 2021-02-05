@@ -55,8 +55,8 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
 
         client = mock(Client.class);
         cache = new GeoIpCache(1000);
-        LocalDatabases localDatabases = new LocalDatabases(geoIpDir, geoIpConfigDir, cache, null);
-        databaseRegistry = new DatabaseRegistry(createTempDir(), client, cache, null, localDatabases, Runnable::run);
+        LocalDatabases localDatabases = new LocalDatabases(geoIpDir, geoIpConfigDir, cache);
+        databaseRegistry = new DatabaseRegistry(createTempDir(), client, cache, localDatabases, Runnable::run);
     }
 
     @AfterClass
@@ -247,8 +247,8 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         // Loading another database reader instances, because otherwise we can't test lazy loading as the
         // database readers used at class level are reused between tests. (we want to keep that otherwise running this
         // test will take roughly 4 times more time)
-        LocalDatabases localDatabases = new LocalDatabases(geoIpDir, geoIpConfigDir, cache, null);
-        DatabaseRegistry databaseRegistry = new DatabaseRegistry(createTempDir(), client, cache, null, localDatabases, Runnable::run);
+        LocalDatabases localDatabases = new LocalDatabases(geoIpDir, geoIpConfigDir, cache);
+        DatabaseRegistry databaseRegistry = new DatabaseRegistry(createTempDir(), client, cache, localDatabases, Runnable::run);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry);
         for (DatabaseReaderLazyLoader lazyLoader : databaseRegistry.getAllDatabases().values()) {
             assertNull(lazyLoader.databaseReader.get());
@@ -307,9 +307,9 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
          */
         ThreadPool threadPool = new TestThreadPool("test");
         ResourceWatcherService resourceWatcherService = new ResourceWatcherService(Settings.EMPTY, threadPool);
-        LocalDatabases databases = new LocalDatabases(geoIpDir, geoIpConfigDir, cache, null);
-        databases.initialize(resourceWatcherService, () -> null);
-        final DatabaseRegistry databaseRegistry = new DatabaseRegistry(createTempDir(), client, cache, null, databases, Runnable::run);
+        LocalDatabases databases = new LocalDatabases(geoIpDir, geoIpConfigDir, cache);
+        databases.initialize(resourceWatcherService);
+        final DatabaseRegistry databaseRegistry = new DatabaseRegistry(createTempDir(), client, cache, databases, Runnable::run);
         final GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseRegistry);
         for (DatabaseReaderLazyLoader lazyLoader : databaseRegistry.getAllDatabases().values()) {
             assertNull(lazyLoader.databaseReader.get());

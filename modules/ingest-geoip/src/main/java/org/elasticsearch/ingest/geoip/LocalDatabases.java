@@ -32,7 +32,7 @@ import static org.elasticsearch.ingest.geoip.IngestGeoIpPlugin.DEFAULT_DATABASE_
 /**
  * Keeps track of the databases locally available to a node:
  * 1) Default databases shipped with the default distribution via ingest-geoip module
- * 2) User provided databases from the ES_HOME/config/ingest-geoip directory. These directory is monitored
+ * 2) User provided databases from the ES_HOME/config/ingest-geoip directory. This directory is monitored
  *    and files updates are picked up and may cause databases being loaded or removed at runtime.
  */
 final class LocalDatabases {

@@ -9,7 +9,6 @@
 import org.apache.tools.ant.taskdefs.condition.Os
 
 apply plugin: 'elasticsearch.yaml-rest-test'
-apply plugin: 'elasticsearch.java-rest-test'
 apply plugin: 'elasticsearch.internal-cluster-test'
 
 esplugin {
@@ -38,11 +37,6 @@ internalClusterTest {
   if ("true" != System.getenv("geoip_use_service")) {
     exclude("**/GeoIpDownloaderIT.class")
   }
-}
-
-tasks.named("javaRestTest").configure {
-  systemProperty 'tests.security.manager', 'false' // Allows the test the add databases to config directory.
-  nonInputProperties.systemProperty 'tests.config.dir', "${-> testClusters.javaRestTest.singleNode().getConfigDir()}"
 }
 
 tasks.register("copyDefaultGeoIp2DatabaseFiles", Copy) {

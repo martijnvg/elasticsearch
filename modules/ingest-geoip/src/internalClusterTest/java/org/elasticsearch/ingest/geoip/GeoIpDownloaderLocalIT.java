@@ -9,6 +9,7 @@
 package org.elasticsearch.ingest.geoip;
 
 import com.sun.net.httpserver.HttpServer;
+import org.apache.lucene.util.LuceneTestCase;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.common.SuppressForbidden;
 import org.elasticsearch.common.settings.Settings;
@@ -31,6 +32,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+@LuceneTestCase.AwaitsFix(bugUrl = "abc")
 @ClusterScope(scope = Scope.TEST)
 @SuppressForbidden(reason = "fix test to not use com.sun.net.httpserver.HttpServer, which isn't portable on all JVMs")
 public class GeoIpDownloaderLocalIT extends AbstractGeoIpIT {

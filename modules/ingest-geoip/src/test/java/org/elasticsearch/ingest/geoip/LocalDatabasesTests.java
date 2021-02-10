@@ -40,7 +40,7 @@ public class LocalDatabasesTests extends ESTestCase {
     }
 
     public void testLocalDatabasesEmptyConfig() throws Exception {
-        Path configDir = Files.createTempDirectory("config");
+        Path configDir = createTempDir();
         LocalDatabases localDatabases = new LocalDatabases(prepareModuleDir(), configDir, new GeoIpCache(0));
         localDatabases.initialize(resourceWatcherService);
 
@@ -56,7 +56,7 @@ public class LocalDatabasesTests extends ESTestCase {
     }
 
     public void testDatabasesConfigDir() throws Exception {
-        Path configDir = Files.createTempDirectory("config");
+        Path configDir = createTempDir();
         Files.copy(LocalDatabases.class.getResourceAsStream("/GeoIP2-City-Test.mmdb"), configDir.resolve("GeoIP2-City.mmdb"));
         Files.copy(LocalDatabases.class.getResourceAsStream("/GeoLite2-City-Test.mmdb"), configDir.resolve("GeoLite2-City.mmdb"));
 
@@ -78,7 +78,7 @@ public class LocalDatabasesTests extends ESTestCase {
     }
 
     public void testDatabasesDynamicUpdateConfigDir() throws Exception {
-        Path configDir = Files.createTempDirectory("config");
+        Path configDir = createTempDir();
         LocalDatabases localDatabases = new LocalDatabases(prepareModuleDir(), configDir, new GeoIpCache(0));
         localDatabases.initialize(resourceWatcherService);
         {
@@ -112,7 +112,7 @@ public class LocalDatabasesTests extends ESTestCase {
     }
 
     private static Path prepareModuleDir() throws IOException {
-        Path dir = Files.createTempDirectory("ingest-geoip");
+        Path dir = createTempDir();
         Files.copy(LocalDatabases.class.getResourceAsStream("/GeoLite2-ASN.mmdb"), dir.resolve("GeoLite2-ASN.mmdb"));
         Files.copy(LocalDatabases.class.getResourceAsStream("/GeoLite2-City.mmdb"), dir.resolve("GeoLite2-City.mmdb"));
         Files.copy(LocalDatabases.class.getResourceAsStream("/GeoLite2-Country.mmdb"), dir.resolve("GeoLite2-Country.mmdb"));

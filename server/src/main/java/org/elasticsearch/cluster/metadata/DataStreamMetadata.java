@@ -48,7 +48,7 @@ public class DataStreamMetadata implements Metadata.Custom {
             }
             return dataStreams;
         }, DATA_STREAM);
-        PARSER.declareObject(ConstructingObjectParser.constructorArg(), (p, c) -> {
+        PARSER.declareObject(ConstructingObjectParser.optionalConstructorArg(), (p, c) -> {
             Map<String, DataStreamAlias> dataStreams = new HashMap<>();
             while (p.nextToken() != XContentParser.Token.END_OBJECT) {
                 DataStreamAlias alias = DataStreamAlias.fromXContent(p);

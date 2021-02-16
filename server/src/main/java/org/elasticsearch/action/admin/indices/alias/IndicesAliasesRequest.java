@@ -237,7 +237,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
             type = AliasActions.Type.fromValue(in.readByte());
             indices = in.readStringArray();
             if (in.getVersion().onOrAfter(DataStreamMetadata.DATA_STREAM_ALIAS_VERSION)) {
-                dataStream = in.readString();
+                dataStream = in.readOptionalString();
             }
             aliases = in.readStringArray();
             filter = in.readOptionalString();
@@ -255,7 +255,7 @@ public class IndicesAliasesRequest extends AcknowledgedRequest<IndicesAliasesReq
             out.writeByte(type.value());
             out.writeStringArray(indices);
             if (out.getVersion().onOrAfter(DataStreamMetadata.DATA_STREAM_ALIAS_VERSION)) {
-                out.writeString(dataStream);
+                out.writeOptionalString(dataStream);
             }
             out.writeStringArray(aliases);
             out.writeOptionalString(filter);

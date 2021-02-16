@@ -1495,22 +1495,20 @@ public class Metadata implements Iterable<IndexMetadata>, Diffable<Metadata>, To
                         indexToDataStreamLookup.put(i.getName(), dataStream);
                     }
                 }
-                if (dataStreamMetadata.getDataStreamAliases() != null) {
-                    for (DataStreamAlias alias : dataStreamMetadata.getDataStreamAliases().values()) {
-                        List<IndexMetadata> allIndicesOfAllDataStreams = alias.getDataStreams().stream()
-                            .map(name -> dataStreamMetadata.dataStreams().get(name))
-                            .flatMap(ds -> ds.getIndices().stream())
-                            .map(index -> indices.get(index.getName()))
-                            .collect(Collectors.toList());
-                        IndexMetadata writeIndexOfWriteDataStream = null;
-                        DataStream writeDataStream = dataStreamMetadata.dataStreams().get(alias.getWriteDataStream());
-                        if (writeDataStream != null) {
-                            writeIndexOfWriteDataStream = indices.get(writeDataStream.getWriteIndex().getName());
-                        }
-                        IndexAbstraction existing = indicesLookup.put(alias.getName(),
-                            new IndexAbstraction.DataStreamAlias(alias, allIndicesOfAllDataStreams, writeIndexOfWriteDataStream));
-                        assert existing == null : "duplicate data stream alias for " + alias.getName();
+                for (DataStreamAlias alias : dataStreamMetadata.getDataStreamAliases().values()) {
+                    List<IndexMetadata> allIndicesOfAllDataStreams = alias.getDataStreams().stream()
+                        .map(name -> dataStreamMetadata.dataStreams().get(name))
+                        .flatMap(ds -> ds.getIndices().stream())
+                        .map(index -> indices.get(index.getName()))
+                        .collect(Collectors.toList());
+                    IndexMetadata writeIndexOfWriteDataStream = null;
+                    DataStream writeDataStream = dataStreamMetadata.dataStreams().get(alias.getWriteDataStream());
+                    if (writeDataStream != null) {
+                        writeIndexOfWriteDataStream = indices.get(writeDataStream.getWriteIndex().getName());
                     }
+                    IndexAbstraction existing = indicesLookup.put(alias.getName(),
+                        new IndexAbstraction.DataStreamAlias(alias, allIndicesOfAllDataStreams, writeIndexOfWriteDataStream));
+                    assert existing == null : "duplicate data stream alias for " + alias.getName();
                 }
             }
 

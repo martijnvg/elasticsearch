@@ -37,7 +37,14 @@ public class DataStreamMetadata implements Metadata.Custom {
     private static final ParseField DATA_STREAM_ALIASES = new ParseField("data_stream_aliases");
     @SuppressWarnings("unchecked")
     private static final ConstructingObjectParser<DataStreamMetadata, Void> PARSER = new ConstructingObjectParser<>(TYPE, false,
-        a -> new DataStreamMetadata((Map<String, DataStream>) a[0], (Map<String, DataStreamAlias>) a[1]));
+        args -> {
+            Map<String, DataStream> dataStreams = (Map<String, DataStream>) args[0];
+            Map<String, DataStreamAlias> dataStreamAliases = (Map<String, DataStreamAlias>) args[1];
+            if (dataStreamAliases == null) {
+                dataStreamAliases = Map.of();
+            }
+            return new DataStreamMetadata(dataStreams, dataStreamAliases);
+    });
 
     static {
         PARSER.declareObject(ConstructingObjectParser.constructorArg(), (p, c) -> {
@@ -65,8 +72,8 @@ public class DataStreamMetadata implements Metadata.Custom {
 
     public DataStreamMetadata(Map<String, DataStream> dataStreams,
                               Map<String, DataStreamAlias> dataStreamAliases) {
-        this.dataStreams = dataStreams;
-        this.dataStreamAliases = dataStreamAliases;
+        this.dataStreams = Objects.requireNonNull(dataStreams);
+        this.dataStreamAliases = Objects.requireNonNull(dataStreamAliases);
     }
 
     public DataStreamMetadata(StreamInput in) throws IOException {
@@ -74,7 +81,7 @@ public class DataStreamMetadata implements Metadata.Custom {
         if (in.getVersion().onOrAfter(DATA_STREAM_ALIAS_VERSION)) {
             this.dataStreamAliases = in.readMap(StreamInput::readString, DataStreamAlias::new);
         } else {
-            this.dataStreamAliases = null;
+            this.dataStreamAliases = Map.of();
         }
     }
 

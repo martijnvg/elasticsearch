@@ -226,8 +226,10 @@ public class DataStreamMetadata implements Metadata.Custom {
 
         @Override
         public Metadata.Custom apply(Metadata.Custom part) {
-            return new DataStreamMetadata(dataStreamDiff.apply(((DataStreamMetadata) part).dataStreams),
-                dataStreamAliasDiff.apply(((DataStreamMetadata) part).dataStreamAliases));
+            return new DataStreamMetadata(
+                dataStreamDiff.apply(((DataStreamMetadata) part).dataStreams),
+                dataStreamAliasDiff != null ? dataStreamAliasDiff.apply(((DataStreamMetadata) part).dataStreamAliases) : Map.of()
+            );
         }
 
         @Override

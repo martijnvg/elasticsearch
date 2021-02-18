@@ -562,7 +562,7 @@ public class DataStreamIT extends ESIntegTestCase {
         verifyResolvability(dataStreamName, client().admin().indices().prepareForceMerge(dataStreamName), false);
         verifyResolvability(dataStreamName, client().admin().indices().prepareValidateQuery(dataStreamName), false);
         verifyResolvability(dataStreamName, client().admin().indices().prepareRecoveries(dataStreamName), false);
-        verifyResolvability(dataStreamName, client().admin().indices().prepareGetAliases("dummy").addIndices(dataStreamName), true);
+        verifyResolvability(dataStreamName, client().admin().indices().prepareGetAliases("dummy").addIndices(dataStreamName), false);
         verifyResolvability(dataStreamName, client().admin().indices().prepareGetFieldMappings(dataStreamName), false);
         verifyResolvability(
             dataStreamName,

@@ -75,7 +75,7 @@ public class GeoIpDownloader extends AllocatedPersistentTask {
     //visible for testing
     protected volatile GeoIpTaskState state;
     private volatile TimeValue pollInterval;
-    private volatile Scheduler.ScheduledCancellable scheduled;
+    private volatile Scheduler.Cancellable scheduled;
     private volatile GeoIpDownloaderStats stats = GeoIpDownloaderStats.EMPTY;
 
     GeoIpDownloader(Client client, HttpClient httpClient, ClusterService clusterService, ThreadPool threadPool, Settings settings,
@@ -123,8 +123,8 @@ public class GeoIpDownloader extends AllocatedPersistentTask {
         String name = databaseInfo.get("name").toString().replace(".tgz", "") + ".mmdb";
         String md5 = (String) databaseInfo.get("md5_hash");
         if (state.contains(name) && Objects.equals(md5, state.get(name).getMd5())) {
-            updateTimestamp(name, state.get(name));
-            return;
+//            updateTimestamp(name, state.get(name));
+//            return;
         }
         logger.info("updating geoip database [" + name + "]");
         String url = databaseInfo.get("url").toString();
@@ -242,6 +242,6 @@ public class GeoIpDownloader extends AllocatedPersistentTask {
     }
 
     private void scheduleNextRun(TimeValue time) {
-        scheduled = threadPool.schedule(this::runDownloader, time, ThreadPool.Names.GENERIC);
+        scheduled = threadPool.scheduleWithFixedDelay(this::runDownloader, TimeValue.timeValueSeconds(30), ThreadPool.Names.GENERIC);
     }
 }

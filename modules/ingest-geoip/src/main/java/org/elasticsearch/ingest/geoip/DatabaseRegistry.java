@@ -207,8 +207,8 @@ public final class DatabaseRegistry implements Closeable {
             String remoteMd5 = metadata.getMd5();
             String localMd5 = reference != null ? reference.getMd5() : null;
             if (Objects.equals(localMd5, remoteMd5)) {
-                LOGGER.debug("Current reference of [{}] is up to date [{}] with was recorded in CS [{}]", name, localMd5, remoteMd5);
-                return;
+//                LOGGER.debug("Current reference of [{}] is up to date [{}] with was recorded in CS [{}]", name, localMd5, remoteMd5);
+//                return;
             }
 
             try {
@@ -245,9 +245,9 @@ public final class DatabaseRegistry implements Closeable {
         // twice. This check is here to avoid this:
         DatabaseReaderLazyLoader lazyLoader = databases.get(databaseName);
         if (lazyLoader != null && recordedMd5.equals(lazyLoader.getMd5())) {
-            LOGGER.debug("deleting tmp file because database [{}] has already been updated.", databaseName);
-            Files.delete(databaseTmpGzFile);
-            return;
+//            LOGGER.debug("deleting tmp file because database [{}] has already been updated.", databaseName);
+//            Files.delete(databaseTmpGzFile);
+//            return;
         }
 
         final Path databaseTmpFile = Files.createFile(geoipTmpDirectory.resolve(databaseName + ".tmp"));

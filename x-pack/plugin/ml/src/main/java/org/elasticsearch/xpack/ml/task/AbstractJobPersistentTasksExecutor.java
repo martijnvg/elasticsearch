@@ -20,6 +20,7 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.core.Tuple;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.persistent.PersistentTaskParams;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata;
 import org.elasticsearch.persistent.PersistentTasksExecutor;
@@ -54,20 +55,20 @@ public abstract class AbstractJobPersistentTasksExecutor<Params extends Persiste
         boolean allowMissing,
         String... indicesOfInterest
     ) {
-        String[] indices = expressionResolver.concreteIndexNames(clusterState, IndicesOptions.lenientExpandOpen(), indicesOfInterest);
+        Index[] indices = expressionResolver.concreteIndices(clusterState, IndicesOptions.lenientExpandOpen(), indicesOfInterest);
         List<String> unavailableIndices = new ArrayList<>(indices.length);
-        for (String index : indices) {
+        for (Index index : indices) {
             // Indices are created on demand from templates.
             // It is not an error if the index doesn't exist yet
             if (clusterState.metadata().hasIndex(index) == false) {
                 if (allowMissing == false) {
-                    unavailableIndices.add(index);
+                    unavailableIndices.add(index.getName());
                 }
                 continue;
             }
             IndexRoutingTable routingTable = clusterState.getRoutingTable().index(index);
             if (routingTable == null || routingTable.allPrimaryShardsActive() == false) {
-                unavailableIndices.add(index);
+                unavailableIndices.add(index.getName());
             }
         }
         return unavailableIndices;

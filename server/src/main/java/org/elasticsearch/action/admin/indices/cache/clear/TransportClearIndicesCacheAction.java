@@ -21,6 +21,7 @@ import org.elasticsearch.cluster.routing.ShardsIterator;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.tasks.Task;
 import org.elasticsearch.threadpool.ThreadPool;
@@ -106,7 +107,7 @@ public class TransportClearIndicesCacheAction extends TransportBroadcastByNodeAc
      * The refresh request works against *all* shards.
      */
     @Override
-    protected ShardsIterator shards(ClusterState clusterState, ClearIndicesCacheRequest request, String[] concreteIndices) {
+    protected ShardsIterator shards(ClusterState clusterState, ClearIndicesCacheRequest request, Index[] concreteIndices) {
         return clusterState.routingTable().allShards(concreteIndices);
     }
 

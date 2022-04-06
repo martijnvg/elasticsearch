@@ -17,6 +17,7 @@ import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.cluster.routing.IndexRoutingTable;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.core.Nullable;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.license.RemoteClusterLicenseChecker;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata;
 import org.elasticsearch.rest.RestStatus;
@@ -174,10 +175,10 @@ public class DatafeedNodeSelector {
             .filter(i -> RemoteClusterLicenseChecker.isRemoteIndex(i) == false)
             .toArray(String[]::new);
 
-        final String[] concreteIndices;
+        final Index[] concreteIndices;
 
         try {
-            concreteIndices = resolver.concreteIndexNames(clusterState, indicesOptions, true, index);
+            concreteIndices = resolver.concreteIndices(clusterState, indicesOptions, true, index);
 
             // If we have remote indices we cannot check those. We should not fail as they may contain data.
             if (hasRemoteIndices == false && concreteIndices.length == 0) {
@@ -203,7 +204,7 @@ public class DatafeedNodeSelector {
             );
         }
 
-        for (String concreteIndex : concreteIndices) {
+        for (var concreteIndex : concreteIndices) {
             IndexRoutingTable routingTable = clusterState.getRoutingTable().index(concreteIndex);
             if (routingTable == null || routingTable.allPrimaryShardsActive() == false) {
                 return new AssignmentFailure(

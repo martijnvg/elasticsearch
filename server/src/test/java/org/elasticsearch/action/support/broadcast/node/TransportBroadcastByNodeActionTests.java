@@ -175,8 +175,8 @@ public class TransportBroadcastByNodeActionTests extends ESTestCase {
         }
 
         @Override
-        protected ShardsIterator shards(ClusterState clusterState, Request request, String[] concreteIndices) {
-            return clusterState.routingTable().allShards(new String[] { TEST_INDEX });
+        protected ShardsIterator shards(ClusterState clusterState, Request request, Index[] concreteIndices) {
+            return clusterState.routingTable().allShards(new Index[] { new Index(TEST_INDEX, ClusterState.UNKNOWN_UUID) });
         }
 
         @Override
@@ -333,7 +333,9 @@ public class TransportBroadcastByNodeActionTests extends ESTestCase {
         action.new AsyncAction(null, request, listener).start();
         Map<String, List<CapturingTransport.CapturedRequest>> capturedRequests = transport.getCapturedRequestsByTargetNodeAndClear();
 
-        ShardsIterator shardIt = clusterService.state().routingTable().allShards(new String[] { TEST_INDEX });
+        ShardsIterator shardIt = clusterService.state()
+            .routingTable()
+            .allShards(new Index[] { new Index(TEST_INDEX, ClusterState.UNKNOWN_UUID) });
         Set<String> set = new HashSet<>();
         for (ShardRouting shard : shardIt) {
             set.add(shard.currentNodeId());
@@ -351,7 +353,9 @@ public class TransportBroadcastByNodeActionTests extends ESTestCase {
     }
 
     public void testNoShardOperationsExecutedIfTaskCancelled() throws Exception {
-        ShardsIterator shardIt = clusterService.state().routingTable().allShards(new String[] { TEST_INDEX });
+        ShardsIterator shardIt = clusterService.state()
+            .routingTable()
+            .allShards(new Index[] { new Index(TEST_INDEX, ClusterState.UNKNOWN_UUID) });
         Set<ShardRouting> shards = new HashSet<>();
         String nodeId = shardIt.iterator().next().currentNodeId();
         for (ShardRouting shard : shardIt) {
@@ -393,7 +397,9 @@ public class TransportBroadcastByNodeActionTests extends ESTestCase {
         Map<String, List<CapturingTransport.CapturedRequest>> capturedRequests = transport.getCapturedRequestsByTargetNodeAndClear();
 
         // the master should not be in the list of nodes that requests were sent to
-        ShardsIterator shardIt = clusterService.state().routingTable().allShards(new String[] { TEST_INDEX });
+        ShardsIterator shardIt = clusterService.state()
+            .routingTable()
+            .allShards(new Index[] { new Index(TEST_INDEX, ClusterState.UNKNOWN_UUID) });
         Set<String> set = new HashSet<>();
         for (ShardRouting shard : shardIt) {
             if (shard.currentNodeId().equals(masterNode.getId()) == false) {
@@ -413,7 +419,9 @@ public class TransportBroadcastByNodeActionTests extends ESTestCase {
     }
 
     public void testOperationExecution() throws Exception {
-        ShardsIterator shardIt = clusterService.state().routingTable().allShards(new String[] { TEST_INDEX });
+        ShardsIterator shardIt = clusterService.state()
+            .routingTable()
+            .allShards(new Index[] { new Index(TEST_INDEX, ClusterState.UNKNOWN_UUID) });
         Set<ShardRouting> shards = new HashSet<>();
         String nodeId = shardIt.iterator().next().currentNodeId();
         for (ShardRouting shard : shardIt) {
@@ -484,7 +492,9 @@ public class TransportBroadcastByNodeActionTests extends ESTestCase {
         action.new AsyncAction(null, request, listener).start();
         Map<String, List<CapturingTransport.CapturedRequest>> capturedRequests = transport.getCapturedRequestsByTargetNodeAndClear();
 
-        ShardsIterator shardIt = clusterService.state().getRoutingTable().allShards(new String[] { TEST_INDEX });
+        ShardsIterator shardIt = clusterService.state()
+            .getRoutingTable()
+            .allShards(new Index[] { new Index(TEST_INDEX, ClusterState.UNKNOWN_UUID) });
         Map<String, List<ShardRouting>> map = new HashMap<>();
         for (ShardRouting shard : shardIt) {
             if (map.containsKey(shard.currentNodeId()) == false) {

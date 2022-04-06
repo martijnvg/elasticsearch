@@ -82,13 +82,17 @@ public class ClusterChangedEvent {
      * Returns <code>true</code> iff the routing table has changed for the given index.
      * Note that this is an object reference equality test, not an equals test.
      */
+    // NOCOMMIT: Verify whether index uuid is really unknown at this point...
     public boolean indexRoutingTableChanged(String index) {
         Objects.requireNonNull(index, "index must not be null");
-        if (state.routingTable().hasIndex(index) == false && previousState.routingTable().hasIndex(index) == false) {
+
+        Index stateIndex = state.getMetadata().resolveIndex(index);
+        Index previousStateIndex = previousState.getMetadata().resolveIndex(index);
+        if (state.routingTable().hasIndex(stateIndex) == false && previousState.routingTable().hasIndex(previousStateIndex) == false) {
             return false;
         }
-        if (state.routingTable().hasIndex(index) && previousState.routingTable().hasIndex(index)) {
-            return state.routingTable().index(index) != previousState.routingTable().index(index);
+        if (state.routingTable().hasIndex(stateIndex) && previousState.routingTable().hasIndex(previousStateIndex)) {
+            return state.routingTable().index(stateIndex) != previousState.routingTable().index(previousStateIndex);
         }
         return true;
     }

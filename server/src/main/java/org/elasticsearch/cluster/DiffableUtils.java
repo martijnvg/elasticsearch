@@ -15,6 +15,7 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable.Reader;
 import org.elasticsearch.common.util.Maps;
+import org.elasticsearch.index.Index;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -39,6 +40,10 @@ public final class DiffableUtils {
      */
     public static KeySerializer<String> getStringKeySerializer() {
         return StringKeySerializer.INSTANCE;
+    }
+
+    public static KeySerializer<Index> getIndexKeySerializer() {
+        return IndexKeySerializer.INSTANCE;
     }
 
     /**
@@ -537,6 +542,21 @@ public final class DiffableUtils {
         @Override
         public String readKey(StreamInput in) throws IOException {
             return in.readString();
+        }
+    }
+
+    private static final class IndexKeySerializer implements KeySerializer<Index> {
+
+        private static final IndexKeySerializer INSTANCE = new IndexKeySerializer();
+
+        @Override
+        public void writeKey(Index key, StreamOutput out) throws IOException {
+            key.writeTo(out);
+        }
+
+        @Override
+        public Index readKey(StreamInput in) throws IOException {
+            return new Index(in);
         }
     }
 

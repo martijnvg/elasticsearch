@@ -23,6 +23,7 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.Randomness;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexService;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.tasks.Task;
@@ -83,14 +84,14 @@ public class TransportRollupIndexerAction extends TransportBroadcastAction<
     protected GroupShardsIterator<ShardIterator> shards(
         ClusterState clusterState,
         RollupIndexerAction.Request request,
-        String[] concreteIndices
+        Index[] concreteIndices
     ) {
         if (concreteIndices.length > 1) {
             throw new IllegalArgumentException("multiple indices: " + Arrays.toString(concreteIndices));
         }
         // Random routing to limit request to a single shard
         String routing = Integer.toString(Randomness.get().nextInt(1000));
-        Map<String, Set<String>> routingMap = indexNameExpressionResolver.resolveSearchRouting(clusterState, routing, request.indices());
+        Map<Index, Set<String>> routingMap = indexNameExpressionResolver.resolveSearchRouting(clusterState, routing, request.indices());
         return clusterService.operationRouting().searchShards(clusterState, concreteIndices, routingMap, null);
     }
 

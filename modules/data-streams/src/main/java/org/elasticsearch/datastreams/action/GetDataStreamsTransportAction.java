@@ -103,7 +103,7 @@ public class GetDataStreamsTransportAction extends TransportMasterNodeReadAction
 
             ClusterStateHealth streamHealth = new ClusterStateHealth(
                 state,
-                dataStream.getIndices().stream().map(Index::getName).toArray(String[]::new)
+                dataStream.getIndices().stream().toArray(Index[]::new)
             );
             dataStreamInfos.add(
                 new GetDataStreamAction.Response.DataStreamInfo(dataStream, streamHealth.getStatus(), indexTemplate, ilmPolicyName)

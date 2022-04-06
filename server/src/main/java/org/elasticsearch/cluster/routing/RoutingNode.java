@@ -264,13 +264,13 @@ public class RoutingNode implements Iterable<ShardRouting> {
      * @param states set of states which should be listed
      * @return a list of shards
      */
-    public List<ShardRouting> shardsWithState(String index, ShardRoutingState... states) {
+    public List<ShardRouting> shardsWithState(Index index, ShardRoutingState... states) {
         List<ShardRouting> shards = new ArrayList<>();
 
         if (states.length == 1) {
             if (states[0] == ShardRoutingState.INITIALIZING) {
                 for (ShardRouting shardEntry : initializingShards) {
-                    if (shardEntry.getIndexName().equals(index) == false) {
+                    if (shardEntry.index().equals(index) == false) {
                         continue;
                     }
                     shards.add(shardEntry);
@@ -278,7 +278,7 @@ public class RoutingNode implements Iterable<ShardRouting> {
                 return shards;
             } else if (states[0] == ShardRoutingState.RELOCATING) {
                 for (ShardRouting shardEntry : relocatingShards) {
-                    if (shardEntry.getIndexName().equals(index) == false) {
+                    if (shardEntry.index().equals(index) == false) {
                         continue;
                     }
                     shards.add(shardEntry);
@@ -288,7 +288,7 @@ public class RoutingNode implements Iterable<ShardRouting> {
         }
 
         for (ShardRouting shardEntry : this) {
-            if (shardEntry.getIndexName().equals(index) == false) {
+            if (shardEntry.index().equals(index) == false) {
                 continue;
             }
             for (ShardRoutingState state : states) {

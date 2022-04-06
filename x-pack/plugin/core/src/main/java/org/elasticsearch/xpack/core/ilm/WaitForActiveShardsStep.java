@@ -77,7 +77,7 @@ public class WaitForActiveShardsStep extends ClusterStateWaitStep {
         }
 
         IndexAbstraction indexAbstraction = metadata.getIndicesLookup().get(index.getName());
-        final String rolledIndexName;
+        final Index rolledIndex;
         final String waitForActiveShardsSettingValue;
         if (indexAbstraction.getParentDataStream() != null) {
             DataStream dataStream = indexAbstraction.getParentDataStream().getDataStream();
@@ -87,7 +87,7 @@ public class WaitForActiveShardsStep extends ClusterStateWaitStep {
                 return getErrorResultOnNullMetadata(getKey(), index);
             }
             IndexMetadata rolledIndexMeta = metadata.index(dataStreamAbstraction.getWriteIndex());
-            rolledIndexName = rolledIndexMeta.getIndex().getName();
+            rolledIndex = rolledIndexMeta.getIndex();
             waitForActiveShardsSettingValue = rolledIndexMeta.getSettings().get(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey());
         } else {
             String rolloverAlias = RolloverAction.LIFECYCLE_ROLLOVER_ALIAS_SETTING.get(originalIndexMeta.getSettings());
@@ -107,7 +107,7 @@ public class WaitForActiveShardsStep extends ClusterStateWaitStep {
             Index aliasWriteIndex = aliasAbstraction.getWriteIndex();
             if (aliasWriteIndex != null) {
                 IndexMetadata writeIndexImd = metadata.index(aliasWriteIndex);
-                rolledIndexName = writeIndexImd.getIndex().getName();
+                rolledIndex = writeIndexImd.getIndex();
                 waitForActiveShardsSettingValue = writeIndexImd.getSettings().get(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey());
             } else {
                 List<Index> indices = aliasAbstraction.getIndices();
@@ -123,15 +123,15 @@ public class WaitForActiveShardsStep extends ClusterStateWaitStep {
                 if (tmpRolledIndex == null) {
                     return getErrorResultOnNullMetadata(getKey(), index);
                 }
-                rolledIndexName = tmpRolledIndex.getName();
-                waitForActiveShardsSettingValue = metadata.index(rolledIndexName).getSettings().get("index.write.wait_for_active_shards");
+                rolledIndex = tmpRolledIndex;
+                waitForActiveShardsSettingValue = metadata.index(rolledIndex).getSettings().get("index.write.wait_for_active_shards");
             }
         }
 
         ActiveShardCount activeShardCount = ActiveShardCount.parseString(waitForActiveShardsSettingValue);
-        boolean enoughShardsActive = activeShardCount.enoughShardsActive(clusterState, rolledIndexName);
+        boolean enoughShardsActive = activeShardCount.enoughShardsActive(clusterState, rolledIndex);
 
-        IndexRoutingTable indexRoutingTable = clusterState.routingTable().index(rolledIndexName);
+        IndexRoutingTable indexRoutingTable = clusterState.routingTable().index(rolledIndex);
         int currentActiveShards = 0;
         for (int i = 0; i < indexRoutingTable.size(); i++) {
             currentActiveShards += indexRoutingTable.shard(i).activeShards().size();

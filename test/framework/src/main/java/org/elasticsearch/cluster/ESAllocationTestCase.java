@@ -228,8 +228,9 @@ public abstract class ESAllocationTestCase extends ESTestCase {
     public static ClusterState startInitializingShardsAndReroute(
         AllocationService allocationService,
         ClusterState clusterState,
-        String index
+        String indexName
     ) {
+        var index = clusterState.getMetadata().getIndicesLookup().get(indexName).getWriteIndex();
         return startShardsAndReroute(
             allocationService,
             clusterState,

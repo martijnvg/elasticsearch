@@ -26,6 +26,7 @@ import org.elasticsearch.common.ValidationException;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.core.Nullable;
 import org.elasticsearch.core.Tuple;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.persistent.AllocatedPersistentTask;
 import org.elasticsearch.persistent.PersistentTaskState;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata;
@@ -149,17 +150,17 @@ public class TransformPersistentTasksExecutor extends PersistentTasksExecutor<Tr
     }
 
     static List<String> verifyIndicesPrimaryShardsAreActive(ClusterState clusterState, IndexNameExpressionResolver resolver) {
-        String[] indices = resolver.concreteIndexNames(
+        Index[] indices = resolver.concreteIndices(
             clusterState,
             IndicesOptions.lenientExpandOpen(),
             TransformInternalIndexConstants.INDEX_NAME_PATTERN,
             TransformInternalIndexConstants.INDEX_NAME_PATTERN_DEPRECATED
         );
         List<String> unavailableIndices = new ArrayList<>(indices.length);
-        for (String index : indices) {
+        for (var index : indices) {
             IndexRoutingTable routingTable = clusterState.getRoutingTable().index(index);
             if (routingTable == null || routingTable.allPrimaryShardsActive() == false) {
-                unavailableIndices.add(index);
+                unavailableIndices.add(index.getName());
             }
         }
         return unavailableIndices;

@@ -136,10 +136,10 @@ public class MetadataUpdateSettingsService {
                 // on an open index
                 Set<Index> openIndices = new HashSet<>();
                 Set<Index> closedIndices = new HashSet<>();
-                final String[] actualIndices = new String[request.indices().length];
+                final Index[] actualIndices = new Index[request.indices().length];
                 for (int i = 0; i < request.indices().length; i++) {
                     Index index = request.indices()[i];
-                    actualIndices[i] = index.getName();
+                    actualIndices[i] = index;
                     final IndexMetadata metadata = currentState.metadata().getIndexSafe(index);
                     if (metadata.getState() == IndexMetadata.State.OPEN) {
                         openIndices.add(index);
@@ -206,7 +206,7 @@ public class MetadataUpdateSettingsService {
 
                 if (IndexSettings.INDEX_TRANSLOG_RETENTION_AGE_SETTING.exists(normalizedSettings)
                     || IndexSettings.INDEX_TRANSLOG_RETENTION_SIZE_SETTING.exists(normalizedSettings)) {
-                    for (String index : actualIndices) {
+                    for (var index : actualIndices) {
                         final Settings settings = metadataBuilder.get(index).getSettings();
                         MetadataCreateIndexService.validateTranslogRetentionSettings(settings);
                         MetadataCreateIndexService.validateStoreTypeSetting(settings);
@@ -214,7 +214,7 @@ public class MetadataUpdateSettingsService {
                 }
                 boolean changed = false;
                 // increment settings versions
-                for (final String index : actualIndices) {
+                for (final var index : actualIndices) {
                     if (same(currentState.metadata().index(index).getSettings(), metadataBuilder.get(index).getSettings()) == false) {
                         changed = true;
                         final IndexMetadata.Builder builder = IndexMetadata.builder(metadataBuilder.get(index));
@@ -305,7 +305,7 @@ public class MetadataUpdateSettingsService {
      * Updates the cluster block only iff the setting exists in the given settings
      */
     private static boolean maybeUpdateClusterBlock(
-        String[] actualIndices,
+        Index[] actualIndices,
         ClusterBlocks.Builder blocks,
         ClusterBlock block,
         Setting<Boolean> setting,
@@ -314,15 +314,15 @@ public class MetadataUpdateSettingsService {
         boolean changed = false;
         if (setting.exists(openSettings)) {
             final boolean updateBlock = setting.get(openSettings);
-            for (String index : actualIndices) {
+            for (var index : actualIndices) {
                 if (updateBlock) {
-                    if (blocks.hasIndexBlock(index, block) == false) {
-                        blocks.addIndexBlock(index, block);
+                    if (blocks.hasIndexBlock(index.getName(), block) == false) {
+                        blocks.addIndexBlock(index.getName(), block);
                         changed = true;
                     }
                 } else {
-                    if (blocks.hasIndexBlock(index, block)) {
-                        blocks.removeIndexBlock(index, block);
+                    if (blocks.hasIndexBlock(index.getName(), block)) {
+                        blocks.removeIndexBlock(index.getName(), block);
                         changed = true;
                     }
                 }

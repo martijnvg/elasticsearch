@@ -180,11 +180,11 @@ public final class DataStream implements SimpleDiffable<DataStream>, ToXContentO
      *
      * @param imSupplier Function that supplies {@link IndexMetadata} instances based on the provided index name
      */
-    public void validate(Function<String, IndexMetadata> imSupplier) {
+    public void validate(Function<Index, IndexMetadata> imSupplier) {
         if (indexMode == IndexMode.TIME_SERIES) {
             // Get a sorted overview of each backing index with there start and end time range:
             var startAndEndTimes = indices.stream()
-                .map(index -> imSupplier.apply(index.getName()))
+                .map(imSupplier)
                 .filter(
                     // Migrated tsdb data streams have non tsdb backing indices:
                     im -> IndexSettings.TIME_SERIES_START_TIME.exists(im.getSettings())

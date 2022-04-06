@@ -55,12 +55,13 @@ public class ShrunkShardsAllocatedStep extends ClusterStateWaitStep {
 
         // We only want to make progress if all shards of the shrunk index are
         // active
-        boolean indexExists = clusterState.metadata().index(shrunkenIndexName) != null;
-        if (indexExists == false) {
+        IndexMetadata imd = clusterState.metadata().index(shrunkenIndexName);
+        if (imd == null) {
             return new Result(false, new Info(false, -1, false));
         }
-        boolean allShardsActive = ActiveShardCount.ALL.enoughShardsActive(clusterState, shrunkenIndexName);
-        int numShrunkIndexShards = clusterState.metadata().index(shrunkenIndexName).getNumberOfShards();
+        Index shrunkenIndex = imd.getIndex();
+        boolean allShardsActive = ActiveShardCount.ALL.enoughShardsActive(clusterState, shrunkenIndex);
+        int numShrunkIndexShards = clusterState.metadata().index(shrunkenIndex).getNumberOfShards();
         if (allShardsActive) {
             return new Result(true, null);
         } else {

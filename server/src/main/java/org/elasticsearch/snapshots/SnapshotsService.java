@@ -905,7 +905,7 @@ public class SnapshotsService extends AbstractLifecycleComponent implements Clus
                 boolean missingIndex = false;
                 for (Index index : dataStream.getIndices()) {
                     final String indexName = index.getName();
-                    if (builder.get(indexName) == null || indicesInSnapshot.contains(indexName) == false) {
+                    if (builder.get(index) == null || indicesInSnapshot.contains(indexName) == false) {
                         missingIndex = true;
                         break;
                     }
@@ -2828,27 +2828,28 @@ public class SnapshotsService extends AbstractLifecycleComponent implements Clus
             snapshotsInProgress.forRepo(repoName)
         );
         final boolean readyToExecute = deletionsInProgress.hasExecutingDeletion(repoName) == false;
-        for (IndexId index : indices) {
-            final String indexName = index.getName();
+        for (IndexId indexId : indices) {
+            final var indexName = indexId.getName();
             final boolean isNewIndex = repositoryData.getIndices().containsKey(indexName) == false;
-            IndexMetadata indexMetadata = currentState.metadata().index(indexName);
+            final var index = currentState.getMetadata().getIndicesLookup().get(indexName).getWriteIndex();
+            IndexMetadata indexMetadata = currentState.metadata().index(index);
             if (indexMetadata == null) {
                 // The index was deleted before we managed to start the snapshot - mark it as missing.
-                builder.put(new ShardId(indexName, IndexMetadata.INDEX_UUID_NA_VALUE, 0), ShardSnapshotStatus.MISSING);
+                builder.put(new ShardId(indexId.getName(), IndexMetadata.INDEX_UUID_NA_VALUE, 0), ShardSnapshotStatus.MISSING);
             } else {
-                final IndexRoutingTable indexRoutingTable = currentState.routingTable().index(indexName);
+                final IndexRoutingTable indexRoutingTable = currentState.routingTable().index(index);
                 assert indexRoutingTable != null;
                 for (int i = 0; i < indexMetadata.getNumberOfShards(); i++) {
                     final ShardId shardId = indexRoutingTable.shard(i).shardId();
                     final ShardGeneration shardRepoGeneration;
                     if (useShardGenerations) {
                         final ShardGeneration inFlightGeneration = inFlightShardStates.generationForShard(
-                            index,
+                            indexId,
                             shardId.id(),
                             shardGenerations
                         );
                         if (inFlightGeneration == null && isNewIndex) {
-                            assert shardGenerations.getShardGen(index, shardId.getId()) == null
+                            assert shardGenerations.getShardGen(indexId, shardId.getId()) == null
                                 : "Found shard generation for new index [" + index + "]";
                             shardRepoGeneration = ShardGenerations.NEW_SHARD_GEN;
                         } else {

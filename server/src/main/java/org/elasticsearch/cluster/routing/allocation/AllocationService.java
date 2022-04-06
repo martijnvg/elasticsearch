@@ -39,6 +39,7 @@ import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.logging.ESLogMessage;
 import org.elasticsearch.gateway.GatewayAllocator;
 import org.elasticsearch.gateway.PriorityComparator;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.snapshots.SnapshotsInfoService;
 
 import java.util.ArrayList;
@@ -306,7 +307,7 @@ public class AllocationService {
             snapshotsInfoService.snapshotShardSizes(),
             currentNanoTime()
         );
-        final Map<Integer, List<String>> autoExpandReplicaChanges = AutoExpandReplicas.getAutoExpandReplicaChanges(
+        final Map<Integer, List<Index>> autoExpandReplicaChanges = AutoExpandReplicas.getAutoExpandReplicaChanges(
             clusterState.metadata(),
             allocationSupplier
         );
@@ -315,15 +316,15 @@ public class AllocationService {
         } else {
             final RoutingTable.Builder routingTableBuilder = RoutingTable.builder(clusterState.routingTable());
             final Metadata.Builder metadataBuilder = Metadata.builder(clusterState.metadata());
-            for (Map.Entry<Integer, List<String>> entry : autoExpandReplicaChanges.entrySet()) {
+            for (var entry : autoExpandReplicaChanges.entrySet()) {
                 final int numberOfReplicas = entry.getKey();
-                final String[] indices = entry.getValue().toArray(Strings.EMPTY_ARRAY);
+                final Index[] indices = entry.getValue().toArray(Index.EMPTY_ARRAY);
                 // we do *not* update the in sync allocation ids as they will be removed upon the first index
                 // operation which make these copies stale
                 routingTableBuilder.updateNumberOfReplicas(numberOfReplicas, indices);
                 metadataBuilder.updateNumberOfReplicas(numberOfReplicas, indices);
                 // update settings version for each index
-                for (final String index : indices) {
+                for (final var index : indices) {
                     final IndexMetadata indexMetadata = metadataBuilder.get(index);
                     final IndexMetadata.Builder indexMetadataBuilder = new IndexMetadata.Builder(indexMetadata).settingsVersion(
                         1 + indexMetadata.getSettingsVersion()

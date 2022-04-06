@@ -38,6 +38,7 @@ import org.elasticsearch.common.settings.Setting.Property;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.core.Tuple;
 import org.elasticsearch.gateway.PriorityComparator;
+import org.elasticsearch.index.Index;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -619,7 +620,12 @@ public class BalancedShardsAllocator implements ShardsAllocator {
          * to the nodes we relocated them from.
          */
         private String[] buildWeightOrderedIndices() {
-            final String[] indices = allocation.routingTable().indicesRouting().keySet().toArray(new String[0]);
+            final String[] indices = allocation.routingTable()
+                .indicesRouting()
+                .keySet()
+                .stream()
+                .map(Index::getName)
+                .toArray(String[]::new);
             final float[] deltas = new float[indices.length];
             for (int i = 0; i < deltas.length; i++) {
                 sorter.reset(indices[i]);

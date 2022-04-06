@@ -395,6 +395,7 @@ public class DiskThresholdMonitor {
             .indicesRouting()
             .keySet()
             .stream()
+            .map(Index::getName)
             .filter(index -> indicesNotToAutoRelease.contains(index) == false)
             .filter(index -> state.getBlocks().hasIndexBlock(index, IndexMetadata.INDEX_READ_ONLY_ALLOW_DELETE_BLOCK))
             // Do not auto release indices that are on either the source or the target of a node replacement

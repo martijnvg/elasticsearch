@@ -18,6 +18,7 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.core.Nullable;
 import org.elasticsearch.core.TimeValue;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.query.QueryRewriteContext;
 import org.elasticsearch.index.query.Rewriteable;
 import org.elasticsearch.search.Scroll;
@@ -98,7 +99,7 @@ public class SearchRequest extends ActionRequest implements IndicesRequest.Repla
 
     private IndicesOptions indicesOptions = DEFAULT_INDICES_OPTIONS;
 
-    private Map<String, long[]> waitForCheckpoints = Collections.emptyMap();
+    private Map<Index, long[]> waitForCheckpoints = Collections.emptyMap();
 
     private TimeValue waitForCheckpointsTimeout = TimeValue.timeValueSeconds(30);
 
@@ -258,7 +259,7 @@ public class SearchRequest extends ActionRequest implements IndicesRequest.Repla
             minCompatibleShardNode = null;
         }
         if (in.getVersion().onOrAfter(Version.V_7_16_0)) {
-            waitForCheckpoints = in.readMap(StreamInput::readString, StreamInput::readLongArray);
+            waitForCheckpoints = in.readMap(Index::new, StreamInput::readLongArray);
             waitForCheckpointsTimeout = in.readTimeValue();
         }
     }
@@ -296,7 +297,7 @@ public class SearchRequest extends ActionRequest implements IndicesRequest.Repla
         }
         Version waitForCheckpointsVersion = Version.V_7_16_0;
         if (out.getVersion().onOrAfter(waitForCheckpointsVersion)) {
-            out.writeMap(waitForCheckpoints, StreamOutput::writeString, StreamOutput::writeLongArray);
+            out.writeMap(waitForCheckpoints, (out1, value) -> value.writeTo(out1), StreamOutput::writeLongArray);
             out.writeTimeValue(waitForCheckpointsTimeout);
         } else if (waitForCheckpoints.isEmpty() == false) {
             throw new IllegalArgumentException(
@@ -655,11 +656,11 @@ public class SearchRequest extends ActionRequest implements IndicesRequest.Repla
         this.maxConcurrentShardRequests = maxConcurrentShardRequests;
     }
 
-    public Map<String, long[]> getWaitForCheckpoints() {
+    public Map<Index, long[]> getWaitForCheckpoints() {
         return waitForCheckpoints;
     }
 
-    public void setWaitForCheckpoints(Map<String, long[]> afterCheckpointsRefreshed) {
+    public void setWaitForCheckpoints(Map<Index, long[]> afterCheckpointsRefreshed) {
         this.waitForCheckpoints = afterCheckpointsRefreshed;
     }
 

@@ -112,7 +112,7 @@ public class MetadataIndexAliasesService {
             }
             Metadata.Builder metadata = Metadata.builder(currentState.metadata());
             // Run the remaining alias actions
-            final Set<String> maybeModifiedIndices = new HashSet<>();
+            final Set<Index> maybeModifiedIndices = new HashSet<>();
             for (AliasAction action : actions) {
                 if (action.removeIndex()) {
                     // Handled above
@@ -140,7 +140,7 @@ public class MetadataIndexAliasesService {
                         AliasValidator.validateAlias(alias, action.getIndex(), indexRouting, lookup);
                         if (Strings.hasLength(filter)) {
                             for (Index index : dataStream.getIndices()) {
-                                IndexMetadata imd = metadata.get(index.getName());
+                                IndexMetadata imd = metadata.get(index);
                                 if (imd == null) {
                                     throw new IndexNotFoundException(action.getIndex());
                                 }
@@ -155,7 +155,8 @@ public class MetadataIndexAliasesService {
                     continue;
                 }
 
-                IndexMetadata index = metadata.get(action.getIndex());
+                var ix = currentState.metadata().resolveIndex(action.getIndex());
+                IndexMetadata index = metadata.get(ix);
                 if (index == null) {
                     throw new IndexNotFoundException(action.getIndex());
                 }
@@ -169,11 +170,11 @@ public class MetadataIndexAliasesService {
                 };
                 if (action.apply(newAliasValidator, metadata, index)) {
                     changed = true;
-                    maybeModifiedIndices.add(index.getIndex().getName());
+                    maybeModifiedIndices.add(index.getIndex());
                 }
             }
 
-            for (final String maybeModifiedIndex : maybeModifiedIndices) {
+            for (final var maybeModifiedIndex : maybeModifiedIndices) {
                 final IndexMetadata currentIndexMetadata = currentState.metadata().index(maybeModifiedIndex);
                 final IndexMetadata newIndexMetadata = metadata.get(maybeModifiedIndex);
                 // only increment the aliases version if the aliases actually changed for this index

@@ -22,6 +22,7 @@ import org.elasticsearch.cluster.routing.ShardsIterator;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.IndexShard;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.tasks.CancellableTask;
@@ -107,7 +108,7 @@ public class TransportForceMergeAction extends TransportBroadcastByNodeAction<
      * The refresh request works against *all* shards.
      */
     @Override
-    protected ShardsIterator shards(ClusterState clusterState, ForceMergeRequest request, String[] concreteIndices) {
+    protected ShardsIterator shards(ClusterState clusterState, ForceMergeRequest request, Index[] concreteIndices) {
         return clusterState.routingTable().allShards(concreteIndices);
     }
 

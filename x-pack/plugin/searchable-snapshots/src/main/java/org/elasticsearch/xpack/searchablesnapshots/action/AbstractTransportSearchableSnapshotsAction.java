@@ -21,6 +21,7 @@ import org.elasticsearch.cluster.routing.ShardRouting;
 import org.elasticsearch.cluster.routing.ShardsIterator;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.io.stream.Writeable;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.IndexShard;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.license.XPackLicenseState;
@@ -88,9 +89,9 @@ public abstract class AbstractTransportSearchableSnapshotsAction<
     }
 
     @Override
-    protected ShardsIterator shards(ClusterState state, Request request, String[] concreteIndices) {
-        final List<String> searchableSnapshotIndices = new ArrayList<>();
-        for (String concreteIndex : concreteIndices) {
+    protected ShardsIterator shards(ClusterState state, Request request, Index[] concreteIndices) {
+        final List<Index> searchableSnapshotIndices = new ArrayList<>();
+        for (var concreteIndex : concreteIndices) {
             IndexMetadata indexMetaData = state.metadata().index(concreteIndex);
             if (indexMetaData != null) {
                 if (indexMetaData.isSearchableSnapshot()) {
@@ -101,7 +102,7 @@ public abstract class AbstractTransportSearchableSnapshotsAction<
         if (searchableSnapshotIndices.isEmpty()) {
             throw new ResourceNotFoundException("No searchable snapshots indices found");
         }
-        return state.routingTable().allShards(searchableSnapshotIndices.toArray(new String[0]));
+        return state.routingTable().allShards(searchableSnapshotIndices.toArray(Index.EMPTY_ARRAY));
     }
 
     @Override

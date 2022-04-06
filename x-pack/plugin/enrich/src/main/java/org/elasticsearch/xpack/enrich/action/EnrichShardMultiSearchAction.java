@@ -41,6 +41,7 @@ import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentHelper;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexService;
 import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.fieldvisitor.FieldsVisitor;
@@ -210,7 +211,7 @@ public class EnrichShardMultiSearchAction extends ActionType<MultiSearchResponse
 
         @Override
         protected ShardsIterator shards(ClusterState state, InternalRequest request) {
-            String index = request.concreteIndex();
+            Index index = request.concreteIndex();
             IndexRoutingTable indexRouting = state.routingTable().index(index);
             int numShards = indexRouting.size();
             if (numShards != 1) {
@@ -218,7 +219,7 @@ public class EnrichShardMultiSearchAction extends ActionType<MultiSearchResponse
             }
 
             GroupShardsIterator<ShardIterator> result = clusterService.operationRouting()
-                .searchShards(state, new String[] { index }, null, Preference.LOCAL.type());
+                .searchShards(state, new Index[] { index }, null, Preference.LOCAL.type());
             return result.get(0);
         }
 

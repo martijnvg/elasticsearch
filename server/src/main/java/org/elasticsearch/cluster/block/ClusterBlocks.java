@@ -184,12 +184,12 @@ public class ClusterBlocks implements SimpleDiffable<ClusterBlocks> {
         }
     }
 
-    public ClusterBlockException indexBlockedException(ClusterBlockLevel level, String index) {
-        return indicesBlockedException(level, new String[] { index });
+    public ClusterBlockException indexBlockedException(ClusterBlockLevel level, String indexUUID) {
+        return indicesBlockedException(level, new String[] { indexUUID });
     }
 
-    public boolean indexBlocked(ClusterBlockLevel level, String index) {
-        return globalBlocked(level) || blocksForIndex(level, index).isEmpty() == false;
+    public boolean indexBlocked(ClusterBlockLevel level, String indexUUID) {
+        return globalBlocked(level) || blocksForIndex(level, indexUUID).isEmpty() == false;
     }
 
     public ClusterBlockException indicesBlockedException(ClusterBlockLevel level, String[] indices) {

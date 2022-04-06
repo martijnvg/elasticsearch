@@ -20,6 +20,7 @@ import org.elasticsearch.cluster.routing.ShardRoutingState;
 import org.elasticsearch.cluster.routing.TestShardRouting;
 import org.elasticsearch.common.Randomness;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.test.ESTestCase;
 
@@ -32,7 +33,7 @@ import static org.hamcrest.core.IsEqual.equalTo;
 public class TransportClusterHealthActionTests extends ESTestCase {
 
     public void testWaitForInitializingShards() throws Exception {
-        final String[] indices = { "test" };
+        final Index[] indices = { new Index("test", ClusterState.UNKNOWN_UUID) };
         final ClusterHealthRequest request = new ClusterHealthRequest();
         request.waitForNoInitializingShards(true);
         ClusterState clusterState = randomClusterStateWithInitializingShards("test", 0);
@@ -51,7 +52,7 @@ public class TransportClusterHealthActionTests extends ESTestCase {
     }
 
     public void testWaitForAllShards() {
-        final String[] indices = { "test" };
+        final Index[] indices = { new Index("test", ClusterState.UNKNOWN_UUID) };
         final ClusterHealthRequest request = new ClusterHealthRequest();
         request.waitForActiveShards(ActiveShardCount.ALL);
 

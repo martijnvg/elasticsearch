@@ -24,6 +24,7 @@ import org.elasticsearch.core.CheckedConsumer;
 import org.elasticsearch.core.CheckedRunnable;
 import org.elasticsearch.core.internal.io.IOUtils;
 import org.elasticsearch.env.Environment;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.ingest.IngestService;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata;
@@ -191,7 +192,8 @@ public final class DatabaseNodeService implements Closeable {
             return;
         }
 
-        IndexRoutingTable databasesIndexRT = state.getRoutingTable().index(GeoIpDownloader.DATABASES_INDEX);
+        Index index = state.getMetadata().getIndicesLookup().get(GeoIpDownloader.DATABASES_INDEX).getWriteIndex();
+        IndexRoutingTable databasesIndexRT = state.getRoutingTable().index(index);
         if (databasesIndexRT == null || databasesIndexRT.allPrimaryShardsActive() == false) {
             return;
         }

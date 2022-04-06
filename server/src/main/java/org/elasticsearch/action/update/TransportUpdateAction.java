@@ -160,7 +160,8 @@ public class TransportUpdateAction extends TransportInstanceSingleOperationActio
     @Override
     protected ShardIterator shards(ClusterState clusterState, UpdateRequest request) {
         if (request.getShardId() != null) {
-            return clusterState.routingTable().index(request.concreteIndex()).shard(request.getShardId().getId()).primaryShardIt();
+            var shardId = request.getShardId();
+            return clusterState.routingTable().index(shardId.getIndex()).shard(shardId.id()).primaryShardIt();
         }
         IndexMetadata indexMetadata = clusterState.metadata().index(request.concreteIndex());
         if (indexMetadata == null) {
@@ -168,7 +169,7 @@ public class TransportUpdateAction extends TransportInstanceSingleOperationActio
         }
         IndexRouting indexRouting = IndexRouting.fromIndexMetadata(indexMetadata);
         int shardId = indexRouting.updateShard(request.id(), request.routing());
-        return RoutingTable.shardRoutingTable(clusterState.routingTable().index(request.concreteIndex()), shardId).primaryShardIt();
+        return RoutingTable.shardRoutingTable(clusterState.routingTable().index(indexMetadata.getIndex()), shardId).primaryShardIt();
     }
 
     @Override

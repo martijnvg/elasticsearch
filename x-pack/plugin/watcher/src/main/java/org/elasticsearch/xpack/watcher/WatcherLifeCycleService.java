@@ -20,6 +20,7 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.component.LifecycleListener;
 import org.elasticsearch.gateway.GatewayService;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.xpack.core.watcher.WatcherMetadata;
 import org.elasticsearch.xpack.core.watcher.WatcherState;
@@ -139,7 +140,7 @@ public class WatcherLifeCycleService implements ClusterStateListener {
             return;
         }
 
-        String watchIndex = watcherIndexMetadata.getIndex().getName();
+        Index watchIndex = watcherIndexMetadata.getIndex();
         List<ShardRouting> localShards = routingNode.shardsWithState(watchIndex, RELOCATING, STARTED);
         // no local shards, empty out watcher and dont waste resources!
         if (localShards.isEmpty()) {

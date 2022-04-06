@@ -125,9 +125,9 @@ public class MetadataDeleteIndexService {
         for (final Index index : indices) {
             String indexName = index.getName();
             logger.info("{} deleting index", index);
-            routingTableBuilder.remove(indexName);
+            routingTableBuilder.remove(index);
             clusterBlocksBuilder.removeIndexBlocks(indexName);
-            metadataBuilder.remove(indexName);
+            metadataBuilder.remove(index);
             if (backingIndices.containsKey(index)) {
                 DataStream parent = metadataBuilder.dataStream(backingIndices.get(index).getName());
                 metadataBuilder.put(parent.removeBackingIndex(index));

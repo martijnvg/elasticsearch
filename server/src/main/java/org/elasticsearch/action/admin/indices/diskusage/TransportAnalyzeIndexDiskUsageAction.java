@@ -26,6 +26,7 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.util.concurrent.ConcurrentCollections;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.shard.IndexShard;
 import org.elasticsearch.index.shard.ShardId;
@@ -214,7 +215,7 @@ public class TransportAnalyzeIndexDiskUsageAction extends TransportBroadcastActi
     protected GroupShardsIterator<ShardIterator> shards(
         ClusterState clusterState,
         AnalyzeIndexDiskUsageRequest request,
-        String[] concreteIndices
+        Index[] concreteIndices
     ) {
         final GroupShardsIterator<ShardIterator> groups = clusterService.operationRouting()
             .searchShards(clusterState, concreteIndices, null, null);

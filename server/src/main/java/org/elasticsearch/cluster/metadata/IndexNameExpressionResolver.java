@@ -676,7 +676,7 @@ public class IndexNameExpressionResolver {
      * the index itself - null is returned. Returns {@code null} if no filtering is required.
      * <b>NOTE</b>: The provided expressions must have been resolved already via {@link #resolveExpressions}.
      */
-    public String[] filteringAliases(ClusterState state, String index, Set<String> resolvedExpressions) {
+    public String[] filteringAliases(ClusterState state, Index index, Set<String> resolvedExpressions) {
         return indexAliases(state, index, AliasMetadata::filteringRequired, DataStreamAlias::filteringRequired, false, resolvedExpressions);
     }
 
@@ -698,7 +698,7 @@ public class IndexNameExpressionResolver {
      */
     public String[] indexAliases(
         ClusterState state,
-        String index,
+        Index index,
         Predicate<AliasMetadata> requiredAlias,
         Predicate<DataStreamAlias> requiredDataStreamAlias,
         boolean skipIdentity,
@@ -708,17 +708,17 @@ public class IndexNameExpressionResolver {
             return null;
         }
 
-        final IndexMetadata indexMetadata = state.metadata().getIndices().get(index);
+        final IndexMetadata indexMetadata = state.metadata().index(index);
         if (indexMetadata == null) {
             // Shouldn't happen
             throw new IndexNotFoundException(index);
         }
 
-        if (skipIdentity == false && resolvedExpressions.contains(index)) {
+        if (skipIdentity == false && resolvedExpressions.contains(indexMetadata.getName())) {
             return null;
         }
 
-        IndexAbstraction ia = state.metadata().getIndicesLookup().get(index);
+        IndexAbstraction ia = state.metadata().getIndicesLookup().get(indexMetadata.getName());
         if (ia.getParentDataStream() != null) {
             DataStream dataStream = ia.getParentDataStream().getDataStream();
             Map<String, DataStreamAlias> dataStreamAliases = state.metadata().dataStreamAliases();
@@ -776,7 +776,7 @@ public class IndexNameExpressionResolver {
      *
      * @return routing values grouped by concrete index
      */
-    public Map<String, Set<String>> resolveSearchRouting(ClusterState state, @Nullable String routing, String... expressions) {
+    public Map<Index, Set<String>> resolveSearchRouting(ClusterState state, @Nullable String routing, String... expressions) {
         Context context = new Context(
             state,
             IndicesOptions.lenientExpandOpen(),
@@ -797,10 +797,10 @@ public class IndexNameExpressionResolver {
             return resolveSearchRoutingAllIndices(state.metadata(), routing);
         }
 
-        Map<String, Set<String>> routings = null;
+        Map<Index, Set<String>> routings = null;
         Set<String> paramRouting = null;
         // List of indices that don't require any routing
-        Set<String> norouting = new HashSet<>();
+        Set<Index> norouting = new HashSet<>();
         if (routing != null) {
             paramRouting = Sets.newHashSet(Strings.splitStringByCommaToArray(routing));
         }
@@ -809,35 +809,34 @@ public class IndexNameExpressionResolver {
             IndexAbstraction indexAbstraction = state.metadata().getIndicesLookup().get(expression);
             if (indexAbstraction != null && indexAbstraction.getType() == IndexAbstraction.Type.ALIAS) {
                 for (Index index : indexAbstraction.getIndices()) {
-                    String concreteIndex = index.getName();
-                    if (norouting.contains(concreteIndex) == false) {
-                        AliasMetadata aliasMetadata = state.metadata().index(concreteIndex).getAliases().get(indexAbstraction.getName());
+                    if (norouting.contains(index) == false) {
+                        AliasMetadata aliasMetadata = state.metadata().index(index).getAliases().get(indexAbstraction.getName());
                         if (aliasMetadata != null && aliasMetadata.searchRoutingValues().isEmpty() == false) {
                             // Routing alias
                             if (routings == null) {
                                 routings = new HashMap<>();
                             }
-                            Set<String> r = routings.computeIfAbsent(concreteIndex, k -> new HashSet<>());
+                            Set<String> r = routings.computeIfAbsent(index, k -> new HashSet<>());
                             r.addAll(aliasMetadata.searchRoutingValues());
                             if (paramRouting != null) {
                                 r.retainAll(paramRouting);
                             }
                             if (r.isEmpty()) {
-                                routings.remove(concreteIndex);
+                                routings.remove(index);
                             }
                         } else {
                             // Non-routing alias
-                            if (norouting.contains(concreteIndex) == false) {
-                                norouting.add(concreteIndex);
+                            if (norouting.contains(index) == false) {
+                                norouting.add(index);
                                 if (paramRouting != null) {
                                     Set<String> r = new HashSet<>(paramRouting);
                                     if (routings == null) {
                                         routings = new HashMap<>();
                                     }
-                                    routings.put(concreteIndex, r);
+                                    routings.put(index, r);
                                 } else {
                                     if (routings != null) {
-                                        routings.remove(concreteIndex);
+                                        routings.remove(index);
                                     }
                                 }
                             }
@@ -851,18 +850,17 @@ public class IndexNameExpressionResolver {
                 }
                 if (dataStream.getIndices() != null) {
                     for (Index index : dataStream.getIndices()) {
-                        String concreteIndex = index.getName();
-                        if (norouting.contains(concreteIndex) == false) {
-                            norouting.add(concreteIndex);
+                        if (norouting.contains(index) == false) {
+                            norouting.add(index);
                             if (paramRouting != null) {
                                 Set<String> r = new HashSet<>(paramRouting);
                                 if (routings == null) {
                                     routings = new HashMap<>();
                                 }
-                                routings.put(concreteIndex, r);
+                                routings.put(index, r);
                             } else {
                                 if (routings != null) {
-                                    routings.remove(concreteIndex);
+                                    routings.remove(index);
                                 }
                             }
                         }
@@ -870,14 +868,16 @@ public class IndexNameExpressionResolver {
                 }
             } else {
                 // Index
-                if (norouting.contains(expression) == false) {
-                    norouting.add(expression);
+                assert indexAbstraction.getType() == Type.CONCRETE_INDEX;
+                Index index = indexAbstraction.getWriteIndex();
+                if (norouting.contains(index) == false) {
+                    norouting.add(index);
                     if (paramRouting != null) {
                         Set<String> r = new HashSet<>(paramRouting);
                         if (routings == null) {
                             routings = new HashMap<>();
                         }
-                        routings.put(expression, r);
+                        routings.put(index, r);
                     } else {
                         if (routings != null) {
                             routings.remove(expression);
@@ -896,13 +896,13 @@ public class IndexNameExpressionResolver {
     /**
      * Sets the same routing for all indices
      */
-    public static Map<String, Set<String>> resolveSearchRoutingAllIndices(Metadata metadata, String routing) {
+    public static Map<Index, Set<String>> resolveSearchRoutingAllIndices(Metadata metadata, String routing) {
         if (routing != null) {
             Set<String> r = Sets.newHashSet(Strings.splitStringByCommaToArray(routing));
-            Map<String, Set<String>> routings = new HashMap<>();
+            Map<Index, Set<String>> routings = new HashMap<>();
             String[] concreteIndices = metadata.getConcreteAllIndices();
-            for (String index : concreteIndices) {
-                routings.put(index, r);
+            for (String indexName : concreteIndices) {
+                routings.put(metadata.resolveIndex(indexName), r);
             }
             return routings;
         }
@@ -1106,7 +1106,7 @@ public class IndexNameExpressionResolver {
         /**
          * This is used to prevent resolving aliases to concrete indices but this also means
          * that we might return aliases that point to a closed index. This is currently only used
-         * by {@link #filteringAliases(ClusterState, String, Set)} since it's the only one that needs aliases
+         * by {@link #filteringAliases(ClusterState, Index, Set)} since it's the only one that needs aliases
          */
         boolean isPreserveAliases() {
             return preserveAliases;

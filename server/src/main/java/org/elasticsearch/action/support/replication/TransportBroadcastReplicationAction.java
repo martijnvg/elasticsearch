@@ -26,6 +26,7 @@ import org.elasticsearch.cluster.routing.IndexRoutingTable;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.util.concurrent.CountDown;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.tasks.Task;
 import org.elasticsearch.transport.TransportService;
@@ -128,11 +129,11 @@ public abstract class TransportBroadcastReplicationAction<
      */
     protected List<ShardId> shards(Request request, ClusterState clusterState) {
         List<ShardId> shardIds = new ArrayList<>();
-        String[] concreteIndices = indexNameExpressionResolver.concreteIndexNames(clusterState, request);
-        for (String index : concreteIndices) {
-            IndexMetadata indexMetadata = clusterState.metadata().getIndices().get(index);
+        Index[] concreteIndices = indexNameExpressionResolver.concreteIndices(clusterState, request);
+        for (var index : concreteIndices) {
+            IndexMetadata indexMetadata = clusterState.metadata().index(index);
             if (indexMetadata != null) {
-                final IndexRoutingTable indexRoutingTable = clusterState.getRoutingTable().indicesRouting().get(index);
+                final IndexRoutingTable indexRoutingTable = clusterState.getRoutingTable().index(index);
                 for (int i = 0; i < indexRoutingTable.size(); i++) {
                     shardIds.add(indexRoutingTable.shard(i).shardId());
                 }

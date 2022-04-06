@@ -391,7 +391,8 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
         boolean shouldSetUpWatcher = state.get() == State.RUNNING && clusterStateChange == false;
         if (canUseWatcher()) {
             if (shouldSetUpWatcher) {
-                final IndexRoutingTable watches = clusterState.routingTable().index(Watch.INDEX);
+                var index = clusterState.getMetadata().getIndicesLookup().get(Watch.INDEX);
+                final IndexRoutingTable watches = index != null ? clusterState.routingTable().index(index.getWriteIndex()) : null;
                 final boolean indexExists = watches != null && watches.allPrimaryShardsActive();
 
                 // we cannot do anything with watches until the index is allocated, so we wait until it's ready
@@ -430,7 +431,8 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
     ) {
         if (canUseWatcher()) {
             if (state.get() != State.TERMINATED) {
-                final IndexRoutingTable watches = clusterState.routingTable().index(Watch.INDEX);
+                var index = clusterState.getMetadata().getIndicesLookup().get(Watch.INDEX);
+                final IndexRoutingTable watches = index != null ? clusterState.routingTable().index(index.getWriteIndex()) : null;
                 final boolean indexExists = watches != null && watches.allPrimaryShardsActive();
 
                 // we cannot do anything with watches until the index is allocated, so we wait until it's ready

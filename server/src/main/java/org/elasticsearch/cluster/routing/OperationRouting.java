@@ -16,6 +16,7 @@ import org.elasticsearch.common.settings.ClusterSettings;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.core.Nullable;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexNotFoundException;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.node.ResponseCollectorService;
@@ -53,7 +54,7 @@ public class OperationRouting {
      */
     public ShardIterator getShards(
         ClusterState clusterState,
-        String index,
+        Index index,
         String id,
         @Nullable String routing,
         @Nullable String preference
@@ -63,7 +64,7 @@ public class OperationRouting {
         return preferenceActiveShardIterator(shards, clusterState.nodes().getLocalNodeId(), clusterState.nodes(), preference, null, null);
     }
 
-    public ShardIterator getShards(ClusterState clusterState, String index, int shardId, @Nullable String preference) {
+    public ShardIterator getShards(ClusterState clusterState, Index index, int shardId, @Nullable String preference) {
         final IndexShardRoutingTable indexShard = clusterState.getRoutingTable().shardRoutingTable(index, shardId);
         return preferenceActiveShardIterator(
             indexShard,
@@ -77,8 +78,8 @@ public class OperationRouting {
 
     public GroupShardsIterator<ShardIterator> searchShards(
         ClusterState clusterState,
-        String[] concreteIndices,
-        @Nullable Map<String, Set<String>> routing,
+        Index[] concreteIndices,
+        @Nullable Map<Index, Set<String>> routing,
         @Nullable String preference
     ) {
         return searchShards(clusterState, concreteIndices, routing, preference, null, null);
@@ -86,8 +87,8 @@ public class OperationRouting {
 
     public GroupShardsIterator<ShardIterator> searchShards(
         ClusterState clusterState,
-        String[] concreteIndices,
-        @Nullable Map<String, Set<String>> routing,
+        Index[] concreteIndices,
+        @Nullable Map<Index, Set<String>> routing,
         @Nullable String preference,
         @Nullable ResponseCollectorService collectorService,
         @Nullable Map<String, Long> nodeCounts
@@ -115,17 +116,17 @@ public class OperationRouting {
         return shard.activeInitializingShardsRandomIt();
     }
 
-    private static final Map<String, Set<String>> EMPTY_ROUTING = Collections.emptyMap();
+    private static final Map<Index, Set<String>> EMPTY_ROUTING = Collections.emptyMap();
 
     private static Set<IndexShardRoutingTable> computeTargetedShards(
         ClusterState clusterState,
-        String[] concreteIndices,
-        @Nullable Map<String, Set<String>> routing
+        Index[] concreteIndices,
+        @Nullable Map<Index, Set<String>> routing
     ) {
         routing = routing == null ? EMPTY_ROUTING : routing; // just use an empty map
         final Set<IndexShardRoutingTable> set = new HashSet<>();
         // we use set here and not list since we might get duplicates
-        for (String index : concreteIndices) {
+        for (Index index : concreteIndices) {
             final IndexRoutingTable indexRoutingTable = indexRoutingTable(clusterState, index);
             final IndexMetadata indexMetadata = indexMetadata(clusterState, index);
             final Set<String> indexSearchRouting = routing.get(index);
@@ -223,7 +224,7 @@ public class OperationRouting {
         }
     }
 
-    protected static IndexRoutingTable indexRoutingTable(ClusterState clusterState, String index) {
+    protected static IndexRoutingTable indexRoutingTable(ClusterState clusterState, Index index) {
         IndexRoutingTable indexRouting = clusterState.routingTable().index(index);
         if (indexRouting == null) {
             throw new IndexNotFoundException(index);
@@ -231,7 +232,7 @@ public class OperationRouting {
         return indexRouting;
     }
 
-    private static IndexMetadata indexMetadata(ClusterState clusterState, String index) {
+    private static IndexMetadata indexMetadata(ClusterState clusterState, Index index) {
         IndexMetadata indexMetadata = clusterState.metadata().index(index);
         if (indexMetadata == null) {
             throw new IndexNotFoundException(index);
@@ -239,7 +240,7 @@ public class OperationRouting {
         return indexMetadata;
     }
 
-    public ShardId shardId(ClusterState clusterState, String index, String id, @Nullable String routing) {
+    public ShardId shardId(ClusterState clusterState, Index index, String id, @Nullable String routing) {
         IndexMetadata indexMetadata = indexMetadata(clusterState, index);
         return new ShardId(indexMetadata.getIndex(), IndexRouting.fromIndexMetadata(indexMetadata).getShard(id, routing));
     }

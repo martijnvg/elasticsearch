@@ -27,6 +27,7 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.core.Nullable;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.tasks.Task;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.transport.TransportChannel;
@@ -36,6 +37,7 @@ import org.elasticsearch.transport.TransportResponseHandler;
 import org.elasticsearch.transport.TransportService;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
@@ -89,7 +91,7 @@ public abstract class TransportBroadcastAction<
      * Determines the shards this operation will be executed on. The operation is executed once per shard iterator, typically
      * on the first shard in it. If the operation fails, it will be retried on the next shard in the iterator.
      */
-    protected abstract GroupShardsIterator<ShardIterator> shards(ClusterState clusterState, Request request, String[] concreteIndices);
+    protected abstract GroupShardsIterator<ShardIterator> shards(ClusterState clusterState, Request request, Index[] concreteIndices);
 
     protected abstract ClusterBlockException checkGlobalBlock(ClusterState state, Request request);
 
@@ -120,8 +122,10 @@ public abstract class TransportBroadcastAction<
                 throw blockException;
             }
             // update to concrete indices
-            String[] concreteIndices = indexNameExpressionResolver.concreteIndexNames(clusterState, request);
-            blockException = checkRequestBlock(clusterState, request, concreteIndices);
+            Index[] concreteIndices = indexNameExpressionResolver.concreteIndices(clusterState, request);
+            // TODO: blocks should be index uuid based:
+            String[] concreteIndicesNames = Arrays.stream(concreteIndices).map(Index::getName).toArray(String[]::new);
+            blockException = checkRequestBlock(clusterState, request, concreteIndicesNames);
             if (blockException != null) {
                 throw blockException;
             }

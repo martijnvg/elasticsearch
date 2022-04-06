@@ -535,8 +535,9 @@ public abstract class GeoShapeIntegTestCase extends ESIntegTestCase {
         }
     }
 
-    private String findNodeName(String index) {
+    private String findNodeName(String indexName) {
         ClusterState state = client().admin().cluster().prepareState().get().getState();
+        var index = state.getMetadata().getIndicesLookup().get(indexName).getWriteIndex();
         IndexShardRoutingTable shard = state.getRoutingTable().index(index).shard(0);
         String nodeId = shard.assignedShards().get(0).currentNodeId();
         return state.getNodes().get(nodeId).getName();

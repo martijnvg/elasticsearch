@@ -23,6 +23,7 @@ import org.elasticsearch.cluster.routing.ShardsIterator;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexService;
 import org.elasticsearch.index.engine.CommitStats;
 import org.elasticsearch.index.seqno.RetentionLeaseStats;
@@ -69,7 +70,7 @@ public class TransportIndicesStatsAction extends TransportBroadcastByNodeAction<
      * Status goes across *all* shards.
      */
     @Override
-    protected ShardsIterator shards(ClusterState clusterState, IndicesStatsRequest request, String[] concreteIndices) {
+    protected ShardsIterator shards(ClusterState clusterState, IndicesStatsRequest request, Index[] concreteIndices) {
         return clusterState.routingTable().allShards(concreteIndices);
     }
 

@@ -21,6 +21,7 @@ import org.elasticsearch.cluster.routing.ShardsIterator;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.IndexShard;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.indices.IndicesService;
@@ -108,7 +109,7 @@ public class TransportFieldUsageAction extends TransportBroadcastByNodeAction<
     }
 
     @Override
-    protected ShardsIterator shards(ClusterState clusterState, FieldUsageStatsRequest request, String[] concreteIndices) {
+    protected ShardsIterator shards(ClusterState clusterState, FieldUsageStatsRequest request, Index[] concreteIndices) {
         return clusterState.routingTable().allActiveShards(concreteIndices);
     }
 

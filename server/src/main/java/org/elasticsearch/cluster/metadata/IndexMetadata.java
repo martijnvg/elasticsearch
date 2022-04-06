@@ -487,6 +487,7 @@ public class IndexMetadata implements Diffable<IndexMetadata>, ToXContentFragmen
 
     static final Version SYSTEM_INDEX_FLAG_ADDED = Version.V_7_10_0;
 
+    private final String name;
     private final int routingNumShards;
     private final int routingFactor;
     private final int routingPartitionSize;
@@ -559,6 +560,7 @@ public class IndexMetadata implements Diffable<IndexMetadata>, ToXContentFragmen
     private final boolean isPartialSearchableSnapshot;
 
     private IndexMetadata(
+        final String name,
         final Index index,
         final long version,
         final long mappingVersion,
@@ -597,6 +599,7 @@ public class IndexMetadata implements Diffable<IndexMetadata>, ToXContentFragmen
         final boolean isSearchableSnapshot,
         final boolean isPartialSearchableSnapshot
     ) {
+        this.name = name;
         this.index = index;
         this.version = version;
         assert mappingVersion >= 0 : mappingVersion;
@@ -650,6 +653,7 @@ public class IndexMetadata implements Diffable<IndexMetadata>, ToXContentFragmen
             return this;
         }
         return new IndexMetadata(
+            this.name,
             this.index,
             this.version,
             this.mappingVersion,
@@ -692,6 +696,10 @@ public class IndexMetadata implements Diffable<IndexMetadata>, ToXContentFragmen
 
     public Index getIndex() {
         return index;
+    }
+
+    public String getName() {
+        return name;
     }
 
     public String getIndexUUID() {
@@ -1685,6 +1693,7 @@ public class IndexMetadata implements Diffable<IndexMetadata>, ToXContentFragmen
 
             final boolean isSearchableSnapshot = SearchableSnapshotsSettings.isSearchableSnapshotStore(settings);
             return new IndexMetadata(
+                index,
                 new Index(index, uuid),
                 version,
                 mappingVersion,

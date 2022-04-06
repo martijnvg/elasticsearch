@@ -760,7 +760,7 @@ public class ShardStateAction {
         }
 
         private static boolean assertStartedIndicesHaveCompleteTimestampRanges(ClusterState clusterState) {
-            for (Map.Entry<String, IndexRoutingTable> cursor : clusterState.getRoutingTable().getIndicesRouting().entrySet()) {
+            for (var cursor : clusterState.getRoutingTable().getIndicesRouting().entrySet()) {
                 assert cursor.getValue().allPrimaryShardsActive() == false
                     || clusterState.metadata().index(cursor.getKey()).getTimestampRange().isComplete()
                     : "index ["

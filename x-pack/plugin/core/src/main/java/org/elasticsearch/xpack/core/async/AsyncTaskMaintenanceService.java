@@ -22,6 +22,7 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.gateway.GatewayService;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.reindex.DeleteByQueryAction;
 import org.elasticsearch.index.reindex.DeleteByQueryRequest;
@@ -108,6 +109,7 @@ public class AsyncTaskMaintenanceService extends AbstractLifecycleComponent impl
         if (lifecycle.stoppedOrClosed()) {
             return;
         }
+        Index index = state.getMetadata().index(this.index).getIndex();
         IndexRoutingTable indexRouting = state.routingTable().index(index);
         if (indexRouting == null) {
             stopCleanup();

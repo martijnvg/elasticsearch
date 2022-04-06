@@ -2010,10 +2010,12 @@ public final class InternalTestCluster extends TestCluster {
     /**
      * Returns a set of nodes that have at least one shard of the given index.
      */
-    public synchronized Set<String> nodesInclude(String index) {
-        if (clusterService().state().routingTable().hasIndex(index)) {
-            List<ShardRouting> allShards = clusterService().state().routingTable().allShards(index);
-            DiscoveryNodes discoveryNodes = clusterService().state().getNodes();
+    public synchronized Set<String> nodesInclude(String indexName) {
+        var clusterState = clusterService().state();
+        Index index = clusterState.getMetadata().resolveIndex(indexName);
+        if (clusterState.routingTable().hasIndex(index)) {
+            List<ShardRouting> allShards = clusterState.routingTable().allShards(index);
+            DiscoveryNodes discoveryNodes = clusterState.getNodes();
             Set<String> nodeNames = new HashSet<>();
             for (ShardRouting shardRouting : allShards) {
                 if (shardRouting.assignedToNode()) {

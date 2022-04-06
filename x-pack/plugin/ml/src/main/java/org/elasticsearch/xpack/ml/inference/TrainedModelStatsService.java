@@ -25,6 +25,7 @@ import org.elasticsearch.cluster.routing.IndexRoutingTable;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.component.LifecycleListener;
 import org.elasticsearch.core.TimeValue;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.indices.InvalidAliasNameException;
 import org.elasticsearch.script.Script;
 import org.elasticsearch.script.ScriptType;
@@ -226,7 +227,7 @@ public class TrainedModelStatsService {
     }
 
     static boolean verifyIndicesExistAndPrimaryShardsAreActive(ClusterState clusterState, IndexNameExpressionResolver expressionResolver) {
-        String[] indices = expressionResolver.concreteIndexNames(
+        Index[] indices = expressionResolver.concreteIndices(
             clusterState,
             IndicesOptions.LENIENT_EXPAND_OPEN_HIDDEN,
             MlStatsIndex.writeAlias()
@@ -235,7 +236,7 @@ public class TrainedModelStatsService {
         if (indices.length == 0) {
             return false;
         }
-        for (String index : indices) {
+        for (Index index : indices) {
             if (clusterState.metadata().hasIndex(index) == false) {
                 return false;
             }

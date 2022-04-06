@@ -21,6 +21,7 @@ import org.elasticsearch.cluster.routing.ShardIterator;
 import org.elasticsearch.cluster.routing.ShardRouting;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.search.internal.AliasFilter;
@@ -76,11 +77,11 @@ public class TransportClusterSearchShardsAction extends TransportMasterNodeReadA
         final ActionListener<ClusterSearchShardsResponse> listener
     ) {
         ClusterState clusterState = clusterService.state();
-        String[] concreteIndices = indexNameExpressionResolver.concreteIndexNames(clusterState, request);
-        Map<String, Set<String>> routingMap = indexNameExpressionResolver.resolveSearchRouting(state, request.routing(), request.indices());
+        Index[] concreteIndices = indexNameExpressionResolver.concreteIndices(clusterState, request);
+        Map<Index, Set<String>> routingMap = indexNameExpressionResolver.resolveSearchRouting(state, request.routing(), request.indices());
         Map<String, AliasFilter> indicesAndFilters = new HashMap<>();
         Set<String> indicesAndAliases = indexNameExpressionResolver.resolveExpressions(clusterState, request.indices());
-        for (String index : concreteIndices) {
+        for (Index index : concreteIndices) {
             final AliasFilter aliasFilter = indicesService.buildAliasFilter(clusterState, index, indicesAndAliases);
             final String[] aliases = indexNameExpressionResolver.indexAliases(
                 clusterState,
@@ -90,7 +91,8 @@ public class TransportClusterSearchShardsAction extends TransportMasterNodeReadA
                 true,
                 indicesAndAliases
             );
-            indicesAndFilters.put(index, new AliasFilter(aliasFilter.getQueryBuilder(), aliases));
+            String indexName = clusterState.getMetadata().index(index).getName();
+            indicesAndFilters.put(indexName, new AliasFilter(aliasFilter.getQueryBuilder(), aliases));
         }
 
         Set<String> nodeIds = new HashSet<>();

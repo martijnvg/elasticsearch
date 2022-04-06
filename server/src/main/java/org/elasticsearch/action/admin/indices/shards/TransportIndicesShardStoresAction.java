@@ -40,6 +40,7 @@ import org.elasticsearch.gateway.AsyncShardFetch;
 import org.elasticsearch.gateway.AsyncShardFetch.Lister;
 import org.elasticsearch.gateway.TransportNodesListGatewayStartedShards;
 import org.elasticsearch.gateway.TransportNodesListGatewayStartedShards.NodeGatewayStartedShards;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.tasks.Task;
 import org.elasticsearch.threadpool.ThreadPool;
@@ -97,12 +98,12 @@ public class TransportIndicesShardStoresAction extends TransportMasterNodeReadAc
     ) {
         final RoutingTable routingTables = state.routingTable();
         final RoutingNodes routingNodes = state.getRoutingNodes();
-        final String[] concreteIndices = indexNameExpressionResolver.concreteIndexNames(state, request);
+        final Index[] concreteIndices = indexNameExpressionResolver.concreteIndices(state, request);
         final Set<Tuple<ShardId, String>> shardsToFetch = new HashSet<>();
 
         logger.trace("using cluster state version [{}] to determine shards", state.version());
         // collect relevant shard ids of the requested indices for fetching store infos
-        for (String index : concreteIndices) {
+        for (Index index : concreteIndices) {
             IndexRoutingTable indexShardRoutingTables = routingTables.index(index);
             if (indexShardRoutingTables == null) {
                 continue;

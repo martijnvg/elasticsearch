@@ -25,6 +25,7 @@ import org.elasticsearch.common.breaker.CircuitBreakingException;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException;
 import org.elasticsearch.core.TimeValue;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.MockEngineFactoryPlugin;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.node.RecoverySettingsChunkSizePlugin;
@@ -396,20 +397,25 @@ public abstract class AbstractIndexRecoveryIntegTestCase extends ESIntegTestCase
                     // ensures that it's considered as valid recovery attempt by source
                     try {
                         assertBusy(
-                            () -> assertThat(
-                                "Expected there to be some initializing shards",
-                                client(blueNodeName).admin()
-                                    .cluster()
-                                    .prepareState()
-                                    .setLocal(true)
-                                    .get()
-                                    .getState()
-                                    .getRoutingTable()
-                                    .index("test")
-                                    .shard(0)
-                                    .getAllInitializingShards(),
-                                not(empty())
-                            )
+
+                            () -> {
+                                var clusterState = client(blueNodeName).admin().cluster().prepareState().setLocal(true).get().getState();
+                                Index index = clusterState.getMetadata().getIndicesLookup().get("test").getWriteIndex();
+                                assertThat(
+                                    "Expected there to be some initializing shards",
+                                    client(blueNodeName).admin()
+                                        .cluster()
+                                        .prepareState()
+                                        .setLocal(true)
+                                        .get()
+                                        .getState()
+                                        .getRoutingTable()
+                                        .index(index)
+                                        .shard(0)
+                                        .getAllInitializingShards(),
+                                    not(empty())
+                                );
+                            }
                         );
                     } catch (Exception e) {
                         throw new RuntimeException(e);

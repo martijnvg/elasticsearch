@@ -177,7 +177,7 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
 
             String[] aliases = indexNameExpressionResolver.indexAliases(
                 clusterState,
-                index.getName(),
+                index,
                 aliasMetadata -> true,
                 dataStreamAlias -> true,
                 true,
@@ -211,7 +211,7 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
         final Map<String, AliasFilter> aliasFilterMap = new HashMap<>();
         for (Index index : concreteIndices) {
             clusterState.blocks().indexBlockedRaiseException(ClusterBlockLevel.READ, index.getName());
-            AliasFilter aliasFilter = searchService.buildAliasFilter(clusterState, index.getName(), indicesAndAliases);
+            AliasFilter aliasFilter = searchService.buildAliasFilter(clusterState, index, indicesAndAliases);
             assert aliasFilter != null;
             aliasFilterMap.put(index.getUUID(), aliasFilter);
         }
@@ -922,11 +922,18 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
         final List<SearchShardIterator> localShardIterators;
         final Map<String, AliasFilter> aliasFilter;
 
-        final String[] concreteLocalIndices;
+        final Index[] concreteLocalIndices;
         if (searchContext != null) {
             assert searchRequest.pointInTimeBuilder() != null;
             aliasFilter = searchContext.aliasFilter();
-            concreteLocalIndices = localIndices == null ? new String[0] : localIndices.indices();
+            if (localIndices != null) {
+                concreteLocalIndices = new Index[localIndices.indices().length];
+                for (int i = 0; i < localIndices.indices().length; i++) {
+                    concreteLocalIndices[i] = clusterState.getMetadata().resolveIndex(localIndices.indices()[i]);
+                }
+            } else {
+                concreteLocalIndices = Index.EMPTY_ARRAY;
+            }
             localShardIterators = getLocalLocalShardsIteratorFromPointInTime(
                 clusterState,
                 localIndices,
@@ -937,16 +944,13 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
             );
         } else {
             final Index[] indices = resolveLocalIndices(localIndices, clusterState, timeProvider);
-            Map<String, Set<String>> routingMap = indexNameExpressionResolver.resolveSearchRouting(
+            Map<Index, Set<String>> routingMap = indexNameExpressionResolver.resolveSearchRouting(
                 clusterState,
                 searchRequest.routing(),
                 searchRequest.indices()
             );
             routingMap = routingMap == null ? Collections.emptyMap() : Collections.unmodifiableMap(routingMap);
-            concreteLocalIndices = new String[indices.length];
-            for (int i = 0; i < indices.length; i++) {
-                concreteLocalIndices[i] = indices[i].getName();
-            }
+            concreteLocalIndices = indices;
             Map<String, Long> nodeSearchCounts = searchTransportService.getPendingSearchRequests();
             GroupShardsIterator<ShardIterator> localShardRoutings = clusterService.operationRouting()
                 .searchShards(
@@ -1031,8 +1035,11 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
         ).start();
     }
 
-    Executor asyncSearchExecutor(final String[] indices) {
-        final List<String> executorsForIndices = Arrays.stream(indices).map(executorSelector::executorForSearch).toList();
+    Executor asyncSearchExecutor(final Index[] indices) {
+        final List<String> executorsForIndices = Arrays.stream(indices)
+            .map(Index::getName)
+            .map(executorSelector::executorForSearch)
+            .toList();
         if (executorsForIndices.size() == 1) { // all indices have same executor
             return threadPool.executor(executorsForIndices.get(0));
         }
@@ -1071,7 +1078,7 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
     static boolean shouldPreFilterSearchShards(
         ClusterState clusterState,
         SearchRequest searchRequest,
-        String[] indices,
+        Index[] indices,
         int numShards,
         int defaultPreFilterShardSize
     ) {
@@ -1087,9 +1094,9 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
             && preFilterShardSize < numShards;
     }
 
-    private static boolean hasReadOnlyIndices(String[] indices, ClusterState clusterState) {
-        for (String index : indices) {
-            ClusterBlockException writeBlock = clusterState.blocks().indexBlockedException(ClusterBlockLevel.WRITE, index);
+    private static boolean hasReadOnlyIndices(Index[] indices, ClusterState clusterState) {
+        for (Index index : indices) {
+            ClusterBlockException writeBlock = clusterState.blocks().indexBlockedException(ClusterBlockLevel.WRITE, index.getUUID());
             if (writeBlock != null) {
                 return true;
             }
@@ -1226,20 +1233,20 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
         ClusterState clusterState,
         IndexNameExpressionResolver resolver,
         SearchRequest searchRequest,
-        String[] concreteLocalIndices
+        Index[] concreteLocalIndices
     ) {
-        HashSet<String> searchedIndices = new HashSet<>(Arrays.asList(concreteLocalIndices));
-        Map<String, long[]> newWaitForCheckpoints = Maps.newMapWithExpectedSize(searchRequest.getWaitForCheckpoints().size());
-        for (Map.Entry<String, long[]> waitForCheckpointIndex : searchRequest.getWaitForCheckpoints().entrySet()) {
+        HashSet<Index> searchedIndices = new HashSet<>(Arrays.asList(concreteLocalIndices));
+        Map<Index, long[]> newWaitForCheckpoints = Maps.newMapWithExpectedSize(searchRequest.getWaitForCheckpoints().size());
+        for (Map.Entry<Index, long[]> waitForCheckpointIndex : searchRequest.getWaitForCheckpoints().entrySet()) {
             long[] checkpoints = waitForCheckpointIndex.getValue();
             int checkpointsProvided = checkpoints.length;
-            String target = waitForCheckpointIndex.getKey();
+            Index target = waitForCheckpointIndex.getKey();
             Index resolved;
             try {
                 resolved = resolver.concreteSingleIndex(clusterState, new IndicesRequest() {
                     @Override
                     public String[] indices() {
-                        return new String[] { target };
+                        return new String[] { target.getUUID() };
                     }
 
                     @Override
@@ -1256,9 +1263,8 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
                     e
                 );
             }
-            String index = resolved.getName();
-            IndexMetadata indexMetadata = clusterState.metadata().index(index);
-            if (searchedIndices.contains(index) == false) {
+            IndexMetadata indexMetadata = clusterState.metadata().index(resolved);
+            if (searchedIndices.contains(resolved) == false) {
                 throw new IllegalArgumentException(
                     "Target configured with wait_for_checkpoints must be a concrete index resolved in "
                         + "this search. Target ["
@@ -1266,7 +1272,7 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
                         + "] is not a concrete index resolved in this search."
                 );
             } else if (indexMetadata == null) {
-                throw new IllegalArgumentException("Cannot find index configured for wait_for_checkpoints parameter [" + index + "].");
+                throw new IllegalArgumentException("Cannot find index configured for wait_for_checkpoints parameter [" + resolved + "].");
             } else if (indexMetadata.getNumberOfShards() != checkpointsProvided) {
                 throw new IllegalArgumentException(
                     "Target configured with wait_for_checkpoints must search the same number of shards as "
@@ -1276,14 +1282,14 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
                         + target
                         + "] which resolved to "
                         + "index ["
-                        + index
+                        + resolved
                         + "] has "
                         + "["
                         + indexMetadata.getNumberOfShards()
                         + "] shards."
                 );
             }
-            newWaitForCheckpoints.put(index, checkpoints);
+            newWaitForCheckpoints.put(resolved, checkpoints);
         }
         searchRequest.setWaitForCheckpoints(Collections.unmodifiableMap(newWaitForCheckpoints));
     }

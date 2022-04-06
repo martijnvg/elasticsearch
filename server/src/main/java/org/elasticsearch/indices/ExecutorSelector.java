@@ -8,6 +8,7 @@
 
 package org.elasticsearch.indices;
 
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.IndexShard;
 import org.elasticsearch.threadpool.ThreadPool;
 

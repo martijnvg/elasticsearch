@@ -140,7 +140,7 @@ public class TransportForgetFollowerAction extends TransportBroadcastByNodeActio
     protected ShardsIterator shards(
         final ClusterState clusterState,
         final ForgetFollowerAction.Request request,
-        final String[] concreteIndices
+        final Index[] concreteIndices
     ) {
         final GroupShardsIterator<ShardIterator> activePrimaryShards = clusterState.routingTable()
             .activePrimaryShardsGrouped(concreteIndices, false);

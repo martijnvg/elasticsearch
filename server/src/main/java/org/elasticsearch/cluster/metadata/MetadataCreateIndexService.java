@@ -162,22 +162,29 @@ public class MetadataCreateIndexService {
     /**
      * Validate the name for an index against some static rules and a cluster state.
      */
-    public static void validateIndexName(String index, ClusterState state) {
-        validateIndexOrAliasName(index, InvalidIndexNameException::new);
-        if (index.toLowerCase(Locale.ROOT).equals(index) == false) {
-            throw new InvalidIndexNameException(index, "must be lowercase");
+    public static void validateIndexName(String indexName, ClusterState state) {
+        validateIndexOrAliasName(indexName, InvalidIndexNameException::new);
+        if (indexName.toLowerCase(Locale.ROOT).equals(indexName) == false) {
+            throw new InvalidIndexNameException(indexName, "must be lowercase");
         }
 
         // NOTE: dot-prefixed index names are validated after template application, not here
 
-        if (state.routingTable().hasIndex(index)) {
-            throw new ResourceAlreadyExistsException(state.routingTable().index(index).getIndex());
+        // this is starting to look backwards...
+        var ia = state.getMetadata().getIndicesLookup().get(indexName);
+        if (ia == null) {
+            return;
         }
+
+        var index = ia.getWriteIndex();
         if (state.metadata().hasIndex(index)) {
             throw new ResourceAlreadyExistsException(state.metadata().index(index).getIndex());
         }
-        if (state.metadata().hasAlias(index)) {
-            throw new InvalidIndexNameException(index, "already exists as alias");
+        if (state.routingTable().hasIndex(index)) {
+            throw new ResourceAlreadyExistsException(state.routingTable().index(index).getIndex());
+        }
+        if (state.metadata().hasAlias(ia.getName())) {
+            throw new InvalidIndexNameException(ia.getName(), "already exists as alias");
         }
     }
 
@@ -1333,7 +1340,7 @@ public class MetadataCreateIndexService {
         }
 
         // now check that index is all on one node
-        final IndexRoutingTable table = state.routingTable().index(sourceIndex);
+        final IndexRoutingTable table = state.routingTable().index(sourceMetadata.getIndex());
         Map<String, AtomicInteger> nodesToNumRouting = new HashMap<>();
         int numShards = sourceMetadata.getNumberOfShards();
         for (ShardRouting routing : table.shardsWithState(ShardRoutingState.STARTED)) {

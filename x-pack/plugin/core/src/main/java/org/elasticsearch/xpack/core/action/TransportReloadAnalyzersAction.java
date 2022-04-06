@@ -27,6 +27,7 @@ import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexService;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.tasks.Task;
@@ -154,10 +155,10 @@ public class TransportReloadAnalyzersAction extends TransportBroadcastByNodeActi
      * The reload request should go to only one shard per node the index lives on
      */
     @Override
-    protected ShardsIterator shards(ClusterState clusterState, ReloadAnalyzersRequest request, String[] concreteIndices) {
+    protected ShardsIterator shards(ClusterState clusterState, ReloadAnalyzersRequest request, Index[] concreteIndices) {
         RoutingTable routingTable = clusterState.routingTable();
         List<ShardRouting> shards = new ArrayList<>();
-        for (String index : concreteIndices) {
+        for (var index : concreteIndices) {
             Set<String> nodesCovered = new HashSet<>();
             IndexRoutingTable indexRoutingTable = routingTable.index(index);
             for (int shardId = 0; shardId < indexRoutingTable.size(); shardId++) {

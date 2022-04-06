@@ -19,6 +19,7 @@ import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.util.Maps;
 import org.elasticsearch.common.xcontent.StatusToXContentObject;
 import org.elasticsearch.core.TimeValue;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.xcontent.ConstructingObjectParser;
 import org.elasticsearch.xcontent.ObjectParser;
@@ -167,13 +168,13 @@ public class ClusterHealthResponse extends ActionResponse implements StatusToXCo
     }
 
     /** needed for plugins BWC */
-    public ClusterHealthResponse(String clusterName, String[] concreteIndices, ClusterState clusterState) {
+    public ClusterHealthResponse(String clusterName, Index[] concreteIndices, ClusterState clusterState) {
         this(clusterName, concreteIndices, clusterState, -1, -1, -1, TimeValue.timeValueHours(0));
     }
 
     public ClusterHealthResponse(
         String clusterName,
-        String[] concreteIndices,
+        Index[] concreteIndices,
         ClusterState clusterState,
         int numberOfPendingTasks,
         int numberOfInFlightFetch,

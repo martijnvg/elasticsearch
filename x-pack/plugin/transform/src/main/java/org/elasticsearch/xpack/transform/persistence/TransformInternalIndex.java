@@ -40,6 +40,7 @@ import org.elasticsearch.xpack.core.transform.transforms.TransformProgress;
 import org.elasticsearch.xpack.core.transform.transforms.TransformState;
 import org.elasticsearch.xpack.core.transform.transforms.TransformStoredDoc;
 import org.elasticsearch.xpack.core.transform.transforms.persistence.TransformInternalIndexConstants;
+import org.elasticsearch.xpack.core.watcher.watch.Watch;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -363,8 +364,8 @@ public final class TransformInternalIndex {
     }
 
     protected static boolean allPrimaryShardsActiveForLatestVersionedIndex(ClusterState state) {
-        IndexRoutingTable indexRouting = state.routingTable().index(TransformInternalIndexConstants.LATEST_INDEX_VERSIONED_NAME);
-
+        var index = state.getMetadata().getIndicesLookup().get(TransformInternalIndexConstants.LATEST_INDEX_VERSIONED_NAME);
+        IndexRoutingTable indexRouting = index != null ? state.routingTable().index(index.getWriteIndex()) : null;
         return indexRouting != null && indexRouting.allPrimaryShardsActive();
     }
 

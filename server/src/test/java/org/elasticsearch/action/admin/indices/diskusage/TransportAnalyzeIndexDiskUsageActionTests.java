@@ -28,6 +28,7 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.ConcurrentCollections;
 import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.core.TimeValue;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.indices.EmptySystemIndices;
 import org.elasticsearch.indices.IndicesService;
@@ -293,7 +294,7 @@ public class TransportAnalyzeIndexDiskUsageActionTests extends ESTestCase {
             protected GroupShardsIterator<ShardIterator> shards(
                 ClusterState clusterState,
                 AnalyzeIndexDiskUsageRequest request,
-                String[] concreteIndices
+                Index[] concreteIndices
             ) {
                 final List<ShardIterator> shardIterators = new ArrayList<>(targetShards.size());
                 for (Map.Entry<ShardId, List<ShardRouting>> e : targetShards.entrySet()) {

@@ -103,7 +103,7 @@ public class DataStreamsStatsTransportAction extends TransportBroadcastByNodeAct
     }
 
     @Override
-    protected String[] resolveConcreteIndexNames(ClusterState clusterState, DataStreamsStatsAction.Request request) {
+    protected Index[] resolveConcreteIndexNames(ClusterState clusterState, DataStreamsStatsAction.Request request) {
         List<String> abstractionNames = indexNameExpressionResolver.dataStreamNames(
             clusterState,
             request.indicesOptions(),
@@ -111,22 +111,22 @@ public class DataStreamsStatsTransportAction extends TransportBroadcastByNodeAct
         );
         SortedMap<String, IndexAbstraction> indicesLookup = clusterState.getMetadata().getIndicesLookup();
 
-        String[] concreteDatastreamIndices = abstractionNames.stream().flatMap(abstractionName -> {
+        Index[] concreteDatastreamIndices = abstractionNames.stream().flatMap(abstractionName -> {
             IndexAbstraction indexAbstraction = indicesLookup.get(abstractionName);
             assert indexAbstraction != null;
             if (indexAbstraction.getType() == IndexAbstraction.Type.DATA_STREAM) {
                 IndexAbstraction.DataStream dataStream = (IndexAbstraction.DataStream) indexAbstraction;
                 List<Index> indices = dataStream.getIndices();
-                return indices.stream().map(Index::getName);
+                return indices.stream();
             } else {
                 return Stream.empty();
             }
-        }).toArray(String[]::new);
+        }).toArray(Index[]::new);
         return concreteDatastreamIndices;
     }
 
     @Override
-    protected ShardsIterator shards(ClusterState clusterState, DataStreamsStatsAction.Request request, String[] concreteIndices) {
+    protected ShardsIterator shards(ClusterState clusterState, DataStreamsStatsAction.Request request, Index[] concreteIndices) {
         return clusterState.getRoutingTable().allShards(concreteIndices);
     }
 

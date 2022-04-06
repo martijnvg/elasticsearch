@@ -23,6 +23,7 @@ import org.elasticsearch.cluster.routing.ShardRouting;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.util.Maps;
 import org.elasticsearch.common.util.set.Sets;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.shard.IndexingOperationListener;
 import org.elasticsearch.index.shard.ShardId;
@@ -229,7 +230,7 @@ final class WatcherIndexingListener implements IndexingOperationListener, Cluste
     }
 
     private void checkWatchIndexHasChanged(IndexMetadata metadata, ClusterChangedEvent event) {
-        String watchIndex = metadata.getIndex().getName();
+        Index watchIndex = metadata.getIndex();
         ClusterState state = event.state();
         String localNodeId = state.nodes().getLocalNode().getId();
         RoutingNode routingNode = state.getRoutingNodes().node(localNodeId);
@@ -251,13 +252,13 @@ final class WatcherIndexingListener implements IndexingOperationListener, Cluste
      * @param localShardRouting List of local shards of that index
      * @param event             The cluster changed event containing the new cluster state
      */
-    private void reloadConfiguration(String watchIndex, List<ShardRouting> localShardRouting, ClusterChangedEvent event) {
+    private void reloadConfiguration(Index watchIndex, List<ShardRouting> localShardRouting, ClusterChangedEvent event) {
         // changed alias means to always read a new configuration
-        boolean isAliasChanged = watchIndex.equals(configuration.index) == false;
+        boolean isAliasChanged = watchIndex.getName().equals(configuration.index) == false;
         if (isAliasChanged || hasShardAllocationIdChanged(watchIndex, event.state())) {
             IndexRoutingTable watchIndexRoutingTable = event.state().routingTable().index(watchIndex);
             Map<ShardId, ShardAllocationConfiguration> ids = getLocalShardAllocationIds(localShardRouting, watchIndexRoutingTable);
-            configuration = new Configuration(watchIndex, ids);
+            configuration = new Configuration(watchIndex.getName(), ids);
         }
     }
 
@@ -268,7 +269,7 @@ final class WatcherIndexingListener implements IndexingOperationListener, Cluste
      * @param state      The new cluster state
      * @return           true if the routing tables has changed and local shards are affected
      */
-    private boolean hasShardAllocationIdChanged(String watchIndex, ClusterState state) {
+    private boolean hasShardAllocationIdChanged(Index watchIndex, ClusterState state) {
         List<ShardRouting> allStartedRelocatedShards = state.getRoutingTable().index(watchIndex).shardsWithState(STARTED);
         allStartedRelocatedShards.addAll(state.getRoutingTable().index(watchIndex).shardsWithState(RELOCATING));
 

@@ -13,6 +13,7 @@ import org.elasticsearch.cluster.routing.allocation.decider.Decision;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Setting.Property;
 import org.elasticsearch.core.Booleans;
+import org.elasticsearch.index.Index;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -137,11 +138,11 @@ public record AutoExpandReplicas(int minReplicas, int maxReplicas, boolean enabl
      * The map has the desired number of replicas as key and the indices to update as value, as this allows the result
      * of this method to be directly applied to RoutingTable.Builder#updateNumberOfReplicas.
      */
-    public static Map<Integer, List<String>> getAutoExpandReplicaChanges(
+    public static Map<Integer, List<Index>> getAutoExpandReplicaChanges(
         Metadata metadata,
         Supplier<RoutingAllocation> allocationSupplier
     ) {
-        Map<Integer, List<String>> nrReplicasChanged = new HashMap<>();
+        Map<Integer, List<Index>> nrReplicasChanged = new HashMap<>();
         // RoutingAllocation is fairly expensive to compute, only lazy create it via the supplier if we actually need it
         RoutingAllocation allocation = null;
         for (final IndexMetadata indexMetadata : metadata) {
@@ -155,7 +156,7 @@ public record AutoExpandReplicas(int minReplicas, int maxReplicas, boolean enabl
                 }
                 autoExpandReplicas.getDesiredNumberOfReplicas(indexMetadata, allocation).ifPresent(numberOfReplicas -> {
                     if (numberOfReplicas != indexMetadata.getNumberOfReplicas()) {
-                        nrReplicasChanged.computeIfAbsent(numberOfReplicas, ArrayList::new).add(indexMetadata.getIndex().getName());
+                        nrReplicasChanged.computeIfAbsent(numberOfReplicas, ArrayList::new).add(indexMetadata.getIndex());
                     }
                 });
             }

@@ -1629,7 +1629,7 @@ public class IndicesService extends AbstractLifecycleComponent
         IndexSettings indexSettings) -> canDeleteIndexContents(index);
     private final IndexDeletionAllowedPredicate ALWAYS_TRUE = (Index index, IndexSettings indexSettings) -> true;
 
-    public AliasFilter buildAliasFilter(ClusterState state, String index, Set<String> resolvedExpressions) {
+    public AliasFilter buildAliasFilter(ClusterState state, Index index, Set<String> resolvedExpressions) {
         /* Being static, parseAliasFilter doesn't have access to whatever guts it needs to parse a query. Instead of passing in a bunch
          * of dependencies we pass in a function that can perform the parsing. */
         CheckedFunction<BytesReference, QueryBuilder, IOException> filterParser = bytes -> {
@@ -1646,7 +1646,8 @@ public class IndicesService extends AbstractLifecycleComponent
         }
 
         Metadata metadata = state.metadata();
-        IndexAbstraction ia = state.metadata().getIndicesLookup().get(index);
+        IndexMetadata indexMetadata = metadata.index(index);
+        IndexAbstraction ia = metadata.getIndicesLookup().get(indexMetadata.getName());
         if (ia.getParentDataStream() != null) {
             List<QueryBuilder> filters = Arrays.stream(aliases).map(name -> metadata.dataStreamAliases().get(name)).map(dataStreamAlias -> {
                 try {
@@ -1669,7 +1670,6 @@ public class IndicesService extends AbstractLifecycleComponent
                 }
             }
         } else {
-            IndexMetadata indexMetadata = metadata.index(index);
             return new AliasFilter(ShardSearchRequest.parseAliasFilter(filterParser, indexMetadata, aliases), aliases);
         }
     }

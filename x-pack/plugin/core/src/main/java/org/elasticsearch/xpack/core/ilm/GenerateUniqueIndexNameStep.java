@@ -106,7 +106,9 @@ public class GenerateUniqueIndexNameStep extends ClusterStateActionStep {
         } catch (InvalidIndexNameException e) {
             err.addValidationError(e.getMessage());
         }
-        if (state.routingTable().hasIndex(generatedIndexName) || state.metadata().hasIndex(generatedIndexName)) {
+        
+        var generatedIndex = state.getMetadata().resolveIndex(generatedIndexName);
+        if (state.routingTable().hasIndex(generatedIndex) || state.metadata().hasIndex(generatedIndex)) {
             err.addValidationError("the index name we generated [" + generatedIndexName + "] already exists");
         }
         if (state.metadata().hasAlias(generatedIndexName)) {

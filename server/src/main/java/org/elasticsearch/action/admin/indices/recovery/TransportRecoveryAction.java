@@ -23,6 +23,7 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.core.Nullable;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexService;
 import org.elasticsearch.index.shard.IndexShard;
 import org.elasticsearch.indices.IndicesService;
@@ -121,7 +122,7 @@ public class TransportRecoveryAction extends TransportBroadcastByNodeAction<Reco
     }
 
     @Override
-    protected ShardsIterator shards(ClusterState state, RecoveryRequest request, String[] concreteIndices) {
+    protected ShardsIterator shards(ClusterState state, RecoveryRequest request, Index[] concreteIndices) {
         return state.routingTable().allShardsIncludingRelocationTargets(concreteIndices);
     }
 

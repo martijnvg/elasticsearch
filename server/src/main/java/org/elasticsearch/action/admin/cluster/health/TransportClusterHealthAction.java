@@ -29,11 +29,11 @@ import org.elasticsearch.cluster.metadata.ProcessClusterEventTimeoutException;
 import org.elasticsearch.cluster.routing.UnassignedInfo;
 import org.elasticsearch.cluster.routing.allocation.AllocationService;
 import org.elasticsearch.cluster.service.ClusterService;
-import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.util.CollectionUtils;
 import org.elasticsearch.core.SuppressForbidden;
 import org.elasticsearch.core.TimeValue;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexNotFoundException;
 import org.elasticsearch.node.NodeClosedException;
 import org.elasticsearch.tasks.Task;
@@ -392,14 +392,14 @@ public class TransportClusterHealthAction extends TransportMasterNodeReadAction<
             logger.trace("Calculating health based on state version [{}]", clusterState.version());
         }
 
-        String[] concreteIndices;
+        Index[] concreteIndices;
         try {
-            concreteIndices = indexNameExpressionResolver.concreteIndexNames(clusterState, request);
+            concreteIndices = indexNameExpressionResolver.concreteIndices(clusterState, request);
         } catch (IndexNotFoundException e) {
             // one of the specified indices is not there - treat it as RED.
             ClusterHealthResponse response = new ClusterHealthResponse(
                 clusterState.getClusterName().value(),
-                Strings.EMPTY_ARRAY,
+                Index.EMPTY_ARRAY,
                 clusterState,
                 numberOfPendingTasks,
                 numberOfInFlightFetch,

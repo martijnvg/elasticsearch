@@ -15,8 +15,10 @@ import org.elasticsearch.cluster.routing.IndexShardRoutingTable;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable;
+import org.elasticsearch.index.Index;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 import static org.elasticsearch.cluster.metadata.IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS;
 
@@ -118,25 +120,31 @@ public record ActiveShardCount(int value) implements Writeable {
         return this.value <= activeShardCount;
     }
 
+    // NOCOMMIT:
+    public boolean enoughShardsActive(final ClusterState clusterState, final String... names) {
+        var lookup = clusterState.getMetadata().getIndicesLookup();
+        return enoughShardsActive(clusterState, Arrays.stream(names).map(name -> lookup.get(name).getWriteIndex()).toArray(Index[]::new));
+    }
+
     /**
      * Returns true iff the given cluster state's routing table contains enough active
      * shards for the given indices to meet the required shard count represented by this instance.
      */
-    public boolean enoughShardsActive(final ClusterState clusterState, final String... indices) {
+    public boolean enoughShardsActive(final ClusterState clusterState, final Index... indices) {
         if (this == ActiveShardCount.NONE) {
             // not waiting for any active shards
             return true;
         }
 
-        for (final String indexName : indices) {
-            final IndexMetadata indexMetadata = clusterState.metadata().index(indexName);
+        for (final var index : indices) {
+            final IndexMetadata indexMetadata = clusterState.getMetadata().index(index);
             if (indexMetadata == null) {
                 // its possible the index was deleted while waiting for active shard copies,
                 // in this case, we'll just consider it that we have enough active shard copies
                 // and we can stop waiting
                 continue;
             }
-            final IndexRoutingTable indexRoutingTable = clusterState.routingTable().index(indexName);
+            final IndexRoutingTable indexRoutingTable = clusterState.routingTable().index(index);
             if (indexRoutingTable == null && indexMetadata.getState() == IndexMetadata.State.CLOSE) {
                 // its possible the index was closed while waiting for active shard copies,
                 // in this case, we'll just consider it that we have enough active shard copies

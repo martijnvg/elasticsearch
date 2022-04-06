@@ -30,6 +30,7 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.logging.LoggerMessageFormat;
 import org.elasticsearch.core.Nullable;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.tasks.Task;
 import org.elasticsearch.threadpool.ThreadPool;
@@ -113,7 +114,7 @@ public abstract class TransportSingleShardAction<Request extends SingleShardRequ
     }
 
     protected ClusterBlockException checkRequestBlock(ClusterState state, InternalRequest request) {
-        return state.blocks().indexBlockedException(ClusterBlockLevel.READ, request.concreteIndex());
+        return state.blocks().indexBlockedException(ClusterBlockLevel.READ, request.concreteIndex().getUUID());
     }
 
     protected void resolveRequest(ClusterState state, InternalRequest request) {
@@ -148,11 +149,11 @@ public abstract class TransportSingleShardAction<Request extends SingleShardRequ
                 throw blockException;
             }
 
-            String concreteSingleIndex;
+            Index concreteSingleIndex;
             if (resolveIndex(request)) {
-                concreteSingleIndex = indexNameExpressionResolver.concreteSingleIndex(clusterState, request).getName();
+                concreteSingleIndex = indexNameExpressionResolver.concreteSingleIndex(clusterState, request);
             } else {
-                concreteSingleIndex = request.index();
+                concreteSingleIndex = clusterState.getMetadata().resolveIndex(request.index());
             }
             this.internalRequest = new InternalRequest(request, concreteSingleIndex);
             resolveRequest(clusterState, internalRequest);
@@ -288,9 +289,9 @@ public abstract class TransportSingleShardAction<Request extends SingleShardRequ
      */
     protected class InternalRequest {
         final Request request;
-        final String concreteIndex;
+        final Index concreteIndex;
 
-        InternalRequest(Request request, String concreteIndex) {
+        InternalRequest(Request request, Index concreteIndex) {
             this.request = request;
             this.concreteIndex = concreteIndex;
         }
@@ -299,7 +300,7 @@ public abstract class TransportSingleShardAction<Request extends SingleShardRequ
             return request;
         }
 
-        public String concreteIndex() {
+        public Index concreteIndex() {
             return concreteIndex;
         }
     }

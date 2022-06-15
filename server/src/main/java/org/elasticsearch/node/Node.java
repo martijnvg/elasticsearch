@@ -50,6 +50,9 @@ import org.elasticsearch.cluster.metadata.MetadataCreateDataStreamService;
 import org.elasticsearch.cluster.metadata.MetadataCreateIndexService;
 import org.elasticsearch.cluster.metadata.MetadataDataStreamsService;
 import org.elasticsearch.cluster.metadata.MetadataUpdateSettingsService;
+import org.elasticsearch.cluster.metadata.ResourceBundle;
+import org.elasticsearch.cluster.metadata.ResourceBundleManager;
+import org.elasticsearch.cluster.metadata.ResourceBundles;
 import org.elasticsearch.cluster.metadata.SystemIndexMetadataUpgradeService;
 import org.elasticsearch.cluster.metadata.TemplateUpgradeService;
 import org.elasticsearch.cluster.node.DiscoveryNode;
@@ -1020,6 +1023,13 @@ public class Node implements Closeable {
             );
             this.namedWriteableRegistry = namedWriteableRegistry;
             this.namedXContentRegistry = xContentRegistry;
+
+            final var resourceBundles = new ResourceBundles(pluginsService.loadServiceProviders(ResourceBundle.class));
+            final var resourceBundleManager = new ResourceBundleManager(
+                clusterService,
+                resourceBundles,
+                actionModule.getOperatorController()
+            );
 
             logger.debug("initializing HTTP handlers ...");
             actionModule.initRestHandlers(() -> clusterService.state().nodesIfRecovered());

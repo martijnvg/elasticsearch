@@ -23,6 +23,7 @@ import org.elasticsearch.xpack.ilm.action.TransportPutLifecycleAction;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -79,9 +80,12 @@ public class OperatorLifecycleAction implements OperatorHandler<PutLifecycleActi
         for (var request : requests) {
             TransportPutLifecycleAction.UpdateLifecyclePolicyTask task = new TransportPutLifecycleAction.UpdateLifecyclePolicyTask(
                 request,
+                null,
                 licenseState,
+                new HashMap<>(),
                 xContentRegistry,
-                client
+                client,
+                false
             );
 
             state = task.execute(state);

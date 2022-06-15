@@ -556,6 +556,14 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
         return plugins().stream().filter(x -> type.isAssignableFrom(x.instance().getClass())).map(p -> ((T) p.instance())).toList();
     }
 
+    public <T> List<T> loadExtension(Class<T> extensionClass) {
+        List<T> result = new ArrayList<>();
+        for (var plugin : plugins) {
+            result.addAll(createExtensions(extensionClass, plugin.instance()));
+        }
+        return result;
+    }
+
     /**
      * Get a function that will take a {@link Settings} object and return a {@link PluginsService}.
      * This function passes in an empty list of classpath plugins.

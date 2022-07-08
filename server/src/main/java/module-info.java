@@ -360,4 +360,5 @@ module org.elasticsearch.server {
             org.elasticsearch.index.shard.ShardToolCliProvider;
 
     uses org.elasticsearch.immutablestate.ImmutableClusterStateHandlerProvider;
+    uses org.elasticsearch.cluster.metadata.BuiltinPackage;
 }

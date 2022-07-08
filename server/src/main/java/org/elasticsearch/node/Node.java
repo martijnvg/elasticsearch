@@ -44,6 +44,7 @@ import org.elasticsearch.cluster.coordination.Coordinator;
 import org.elasticsearch.cluster.coordination.MasterHistoryService;
 import org.elasticsearch.cluster.coordination.StableMasterHealthIndicatorService;
 import org.elasticsearch.cluster.desirednodes.DesiredNodesSettingsValidator;
+import org.elasticsearch.cluster.metadata.BuiltinPackages;
 import org.elasticsearch.cluster.metadata.IndexMetadataVerifier;
 import org.elasticsearch.cluster.metadata.IndexTemplateMetadata;
 import org.elasticsearch.cluster.metadata.Metadata;
@@ -51,6 +52,8 @@ import org.elasticsearch.cluster.metadata.MetadataCreateDataStreamService;
 import org.elasticsearch.cluster.metadata.MetadataCreateIndexService;
 import org.elasticsearch.cluster.metadata.MetadataDataStreamsService;
 import org.elasticsearch.cluster.metadata.MetadataUpdateSettingsService;
+import org.elasticsearch.cluster.metadata.BuiltinPackage;
+import org.elasticsearch.cluster.metadata.BuiltinPackageManager;
 import org.elasticsearch.cluster.metadata.SystemIndexMetadataUpgradeService;
 import org.elasticsearch.cluster.metadata.TemplateUpgradeService;
 import org.elasticsearch.cluster.node.DiscoveryNode;
@@ -1044,6 +1047,13 @@ public class Node implements Closeable {
             );
             this.namedWriteableRegistry = namedWriteableRegistry;
             this.namedXContentRegistry = xContentRegistry;
+
+            final var resourceBundles = new BuiltinPackages(pluginsService.loadServiceProviders(BuiltinPackage.class));
+            final var resourceBundleManager = new BuiltinPackageManager(
+                clusterService,
+                resourceBundles,
+                actionModule.getImmutableClusterStateController()
+            );
 
             logger.debug("initializing HTTP handlers ...");
             actionModule.initRestHandlers(() -> clusterService.state().nodesIfRecovered());

@@ -20,17 +20,13 @@ import org.elasticsearch.xcontent.NamedXContentRegistry;
 import org.elasticsearch.xcontent.XContentParserConfiguration;
 import org.elasticsearch.xcontent.json.JsonXContent;
 import org.elasticsearch.xpack.core.ClientHelper;
-import org.elasticsearch.xpack.core.ilm.LifecyclePolicy;
 import org.elasticsearch.xpack.core.template.IndexTemplateConfig;
 import org.elasticsearch.xpack.core.template.IndexTemplateRegistry;
-import org.elasticsearch.xpack.core.template.LifecyclePolicyConfig;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 
 public class StackTemplateRegistry extends IndexTemplateRegistry {
     private static final Logger logger = LogManager.getLogger(StackTemplateRegistry.class);
@@ -54,20 +50,10 @@ public class StackTemplateRegistry extends IndexTemplateRegistry {
     public static final String DATA_STREAMS_MAPPINGS_COMPONENT_TEMPLATE_NAME = "data-streams-mappings";
 
     //////////////////////////////////////////////////////////
-    // Built in ILM policies for users to use
-    //////////////////////////////////////////////////////////
-    public static final String ILM_7_DAYS_POLICY_NAME = "7-days-default";
-    public static final String ILM_30_DAYS_POLICY_NAME = "30-days-default";
-    public static final String ILM_90_DAYS_POLICY_NAME = "90-days-default";
-    public static final String ILM_180_DAYS_POLICY_NAME = "180-days-default";
-    public static final String ILM_365_DAYS_POLICY_NAME = "365-days-default";
-
-    //////////////////////////////////////////////////////////
     // Logs components (for matching logs-*-* indices)
     //////////////////////////////////////////////////////////
     public static final String LOGS_MAPPINGS_COMPONENT_TEMPLATE_NAME = "logs-mappings";
     public static final String LOGS_SETTINGS_COMPONENT_TEMPLATE_NAME = "logs-settings";
-    public static final String LOGS_ILM_POLICY_NAME = "logs";
     public static final String LOGS_INDEX_TEMPLATE_NAME = "logs";
 
     //////////////////////////////////////////////////////////
@@ -75,7 +61,6 @@ public class StackTemplateRegistry extends IndexTemplateRegistry {
     //////////////////////////////////////////////////////////
     public static final String METRICS_MAPPINGS_COMPONENT_TEMPLATE_NAME = "metrics-mappings";
     public static final String METRICS_SETTINGS_COMPONENT_TEMPLATE_NAME = "metrics-settings";
-    public static final String METRICS_ILM_POLICY_NAME = "metrics";
     public static final String METRICS_INDEX_TEMPLATE_NAME = "metrics";
 
     //////////////////////////////////////////////////////////
@@ -83,7 +68,6 @@ public class StackTemplateRegistry extends IndexTemplateRegistry {
     //////////////////////////////////////////////////////////
     public static final String SYNTHETICS_MAPPINGS_COMPONENT_TEMPLATE_NAME = "synthetics-mappings";
     public static final String SYNTHETICS_SETTINGS_COMPONENT_TEMPLATE_NAME = "synthetics-settings";
-    public static final String SYNTHETICS_ILM_POLICY_NAME = "synthetics";
     public static final String SYNTHETICS_INDEX_TEMPLATE_NAME = "synthetics";
 
     public StackTemplateRegistry(
@@ -114,26 +98,6 @@ public class StackTemplateRegistry extends IndexTemplateRegistry {
                 String.join(",", getComponentTemplateConfigs().keySet())
             );
             this.stackTemplateEnabled = false;
-        }
-    }
-
-    private static final List<LifecyclePolicy> LIFECYCLE_POLICY_CONFIGS = Stream.of(
-        new LifecyclePolicyConfig(LOGS_ILM_POLICY_NAME, "/logs-policy.json"),
-        new LifecyclePolicyConfig(METRICS_ILM_POLICY_NAME, "/metrics-policy.json"),
-        new LifecyclePolicyConfig(SYNTHETICS_ILM_POLICY_NAME, "/synthetics-policy.json"),
-        new LifecyclePolicyConfig(ILM_7_DAYS_POLICY_NAME, "/" + ILM_7_DAYS_POLICY_NAME + ".json"),
-        new LifecyclePolicyConfig(ILM_30_DAYS_POLICY_NAME, "/" + ILM_30_DAYS_POLICY_NAME + ".json"),
-        new LifecyclePolicyConfig(ILM_90_DAYS_POLICY_NAME, "/" + ILM_90_DAYS_POLICY_NAME + ".json"),
-        new LifecyclePolicyConfig(ILM_180_DAYS_POLICY_NAME, "/" + ILM_180_DAYS_POLICY_NAME + ".json"),
-        new LifecyclePolicyConfig(ILM_365_DAYS_POLICY_NAME, "/" + ILM_365_DAYS_POLICY_NAME + ".json")
-    ).map(config -> config.load(LifecyclePolicyConfig.DEFAULT_X_CONTENT_REGISTRY)).toList();
-
-    @Override
-    protected List<LifecyclePolicy> getPolicyConfigs() {
-        if (stackTemplateEnabled) {
-            return LIFECYCLE_POLICY_CONFIGS;
-        } else {
-            return Collections.emptyList();
         }
     }
 

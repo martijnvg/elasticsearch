@@ -25,6 +25,7 @@ import org.elasticsearch.search.aggregations.bucket.histogram.DateHistogramInter
 import org.elasticsearch.search.aggregations.bucket.histogram.Histogram;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.aggregations.metrics.CompensatedSum;
+import org.elasticsearch.search.aggregations.metrics.Max;
 import org.elasticsearch.search.aggregations.metrics.Stats;
 import org.elasticsearch.search.aggregations.metrics.Sum;
 import org.elasticsearch.search.aggregations.pipeline.SimpleValue;
@@ -46,6 +47,7 @@ import java.util.stream.IntStream;
 
 import static org.elasticsearch.search.aggregations.AggregationBuilders.dateHistogram;
 import static org.elasticsearch.search.aggregations.AggregationBuilders.global;
+import static org.elasticsearch.search.aggregations.AggregationBuilders.max;
 import static org.elasticsearch.search.aggregations.AggregationBuilders.stats;
 import static org.elasticsearch.search.aggregations.AggregationBuilders.sum;
 import static org.elasticsearch.search.aggregations.AggregationBuilders.terms;
@@ -57,6 +59,7 @@ import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.lessThanOrEqualTo;
 
@@ -71,7 +74,7 @@ public class TimeSeriesAggregationsIT extends ESIntegTestCase {
 
     @Override
     public void setupSuiteScopeCluster() throws Exception {
-        int numberOfIndices = randomIntBetween(1, 3);
+        int numberOfIndices = 1;// randomIntBetween(1, 3);
         numberOfDimensions = randomIntBetween(1, 5);
         numberOfMetrics = randomIntBetween(1, 10);
         String[] routingKeys = randomSubsetOf(
@@ -171,7 +174,7 @@ public class TimeSeriesAggregationsIT extends ESIntegTestCase {
     }
 
     public void testStandAloneTimeSeriesAgg() {
-        SearchResponse response = client().prepareSearch("index").setSize(0).addAggregation(timeSeries("by_ts")).get();
+        SearchResponse response = client().prepareSearch("index").setSize(0).addAggregation(timeSeries("by_ts").size(data.size())).get();
         assertSearchResponse(response);
         Aggregations aggregations = response.getAggregations();
         assertNotNull(aggregations);
@@ -195,7 +198,7 @@ public class TimeSeriesAggregationsIT extends ESIntegTestCase {
                 terms("by_dim").field(groupBy)
                     .size(data.size())
                     .collectMode(randomFrom(Aggregator.SubAggCollectionMode.values()))
-                    .subAggregation(timeSeries("by_ts"))
+                    .subAggregation(timeSeries("by_ts").size(data.size()))
             )
             .get();
         assertSearchResponse(response);
@@ -223,7 +226,7 @@ public class TimeSeriesAggregationsIT extends ESIntegTestCase {
             .addAggregation(
                 dateHistogram("by_time").field("@timestamp")
                     .fixedInterval(fixedInterval)
-                    .subAggregation(timeSeries("by_ts").subAggregation(stats("timestamp").field("@timestamp")))
+                    .subAggregation(timeSeries("by_ts").size(data.size()).subAggregation(stats("timestamp").field("@timestamp")))
             )
             .get();
         assertSearchResponse(response);
@@ -264,7 +267,7 @@ public class TimeSeriesAggregationsIT extends ESIntegTestCase {
         SearchResponse response = client().prepareSearch("index")
             .setQuery(queryBuilder)
             .setSize(0)
-            .addAggregation(timeSeries("by_ts"))
+            .addAggregation(timeSeries("by_ts").size(data.size()))
             .get();
         assertSearchResponse(response);
         Aggregations aggregations = response.getAggregations();
@@ -294,7 +297,7 @@ public class TimeSeriesAggregationsIT extends ESIntegTestCase {
         SearchResponse response = client().prepareSearch("index")
             .setQuery(queryBuilder)
             .setSize(0)
-            .addAggregation(timeSeries("by_ts").subAggregation(sum("filter_sum").field("metric_" + metric)))
+            .addAggregation(timeSeries("by_ts").size(data.size()).subAggregation(sum("filter_sum").field("metric_" + metric)))
             .addAggregation(global("everything").subAggregation(sum("all_sum").field("metric_" + metric)))
             .addAggregation(PipelineAggregatorBuilders.sumBucket("total_filter_sum", "by_ts>filter_sum"))
             .get();
@@ -343,7 +346,7 @@ public class TimeSeriesAggregationsIT extends ESIntegTestCase {
         SearchResponse response = client().prepareSearch("index")
             .setQuery(queryBuilder)
             .setSize(0)
-            .addAggregation(timeSeries("by_ts"))
+            .addAggregation(timeSeries("by_ts").size(data.size()))
             .get();
         assertSearchResponse(response);
         Aggregations aggregations = response.getAggregations();
@@ -384,6 +387,57 @@ public class TimeSeriesAggregationsIT extends ESIntegTestCase {
         );
         assertThat(e.getDetailedMessage(), containsString("Top hits aggregations cannot be used together with time series aggregations"));
         // TODO: Fix the top hits aggregation
+    }
+
+    public void testBucketOrder() {
+        List<Map.Entry<Map<?, ?>, Double>> maxMetric0 = new ArrayList<>(data.size());
+        for (var entry : data.entrySet()) {
+            var tsid = entry.getKey();
+            double maxValue = Double.MIN_VALUE;
+            for (Map.Entry<Long, Map<String, Double>> timeSeriesEntry : entry.getValue().entrySet()) {
+                double value = timeSeriesEntry.getValue().get("metric_0");
+                maxValue = Math.max(maxValue, value);
+            }
+            maxMetric0.add(Map.entry(tsid, maxValue));
+        }
+        maxMetric0.sort(Map.Entry.comparingByValue((o1, o2) -> -o1.compareTo(o2)));
+        if (maxMetric0.size() > 10) {
+            maxMetric0 = maxMetric0.subList(0, 10);
+        }
+
+        SearchResponse response = client().prepareSearch("index")
+            .setSize(0)
+            .addAggregation(
+                timeSeries("by_ts").order(BucketOrder.aggregation("max_metric", false)).subAggregation(max("max_metric").field("metric_0"))
+            )
+            .get();
+
+        assertSearchResponse(response);
+        Aggregations aggregations = response.getAggregations();
+        assertNotNull(aggregations);
+        TimeSeries timeSeries = aggregations.get("by_ts");
+        assertThat(
+            timeSeries.getBuckets().stream().map(MultiBucketsAggregation.Bucket::getKey).collect(Collectors.toSet()),
+            equalTo(maxMetric0.stream().map(Map.Entry::getKey).collect(Collectors.toSet()))
+        );
+        for (int i = 0; i < timeSeries.getBuckets().size(); i++) {
+            TimeSeries.Bucket actual = timeSeries.getBuckets().get(i);
+            Map.Entry<Map<?, ?>, Double> expected = maxMetric0.get(i);
+            assertThat(actual.getKey(), equalTo(expected.getKey()));
+            assertThat(((Max) actual.getAggregations().get("max_metric")).value(), equalTo(expected.getValue()));
+        }
+    }
+
+    public void testSize() {
+        SearchResponse response = client().prepareSearch("index").setSize(0).addAggregation(timeSeries("by_ts").size(5)).get();
+        assertSearchResponse(response);
+        Aggregations aggregations = response.getAggregations();
+        assertNotNull(aggregations);
+        TimeSeries timeSeries = aggregations.get("by_ts");
+        assertThat(
+            timeSeries.getBuckets(),
+            hasSize(5)
+        );
     }
 
     /**

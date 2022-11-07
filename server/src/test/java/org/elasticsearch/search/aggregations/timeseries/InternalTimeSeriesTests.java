@@ -8,6 +8,7 @@
 
 package org.elasticsearch.search.aggregations.timeseries;
 
+import org.elasticsearch.search.aggregations.BucketOrder;
 import org.elasticsearch.search.aggregations.InternalAggregations;
 import org.elasticsearch.test.InternalMultiBucketAggregationTestCase;
 
@@ -54,7 +55,9 @@ public class InternalTimeSeriesTests extends InternalMultiBucketAggregationTestC
     @Override
     protected InternalTimeSeries createTestInstance(String name, Map<String, Object> metadata, InternalAggregations aggregations) {
         boolean keyed = randomBoolean();
-        return new InternalTimeSeries(name, randomBuckets(keyed, aggregations), keyed, metadata);
+        int size = randomIntBetween(0, 32);
+        BucketOrder bucketOrder = null;
+        return new InternalTimeSeries(name, randomBuckets(keyed, aggregations), keyed, size, bucketOrder, metadata);
     }
 
     @Override

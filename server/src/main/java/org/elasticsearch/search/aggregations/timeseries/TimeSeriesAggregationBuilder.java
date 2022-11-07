@@ -15,6 +15,8 @@ import org.elasticsearch.search.aggregations.AbstractAggregationBuilder;
 import org.elasticsearch.search.aggregations.AggregationBuilder;
 import org.elasticsearch.search.aggregations.AggregatorFactories;
 import org.elasticsearch.search.aggregations.AggregatorFactory;
+import org.elasticsearch.search.aggregations.BucketOrder;
+import org.elasticsearch.search.aggregations.InternalOrder;
 import org.elasticsearch.search.aggregations.support.AggregationContext;
 import org.elasticsearch.xcontent.InstantiatingObjectParser;
 import org.elasticsearch.xcontent.ParseField;
@@ -30,9 +32,13 @@ import static org.elasticsearch.xcontent.ConstructingObjectParser.optionalConstr
 public class TimeSeriesAggregationBuilder extends AbstractAggregationBuilder<TimeSeriesAggregationBuilder> {
     public static final String NAME = "time_series";
     public static final ParseField KEYED_FIELD = new ParseField("keyed");
+    public static final ParseField SIZE_FIELD = new ParseField("size");
+    public static final ParseField ORDER_FIELD = new ParseField("order");
     public static final InstantiatingObjectParser<TimeSeriesAggregationBuilder, String> PARSER;
 
     private boolean keyed;
+    private int size = 10;
+    private BucketOrder order;
 
     static {
         InstantiatingObjectParser.Builder<TimeSeriesAggregationBuilder, String> parser = InstantiatingObjectParser.builder(
@@ -41,6 +47,11 @@ public class TimeSeriesAggregationBuilder extends AbstractAggregationBuilder<Tim
             TimeSeriesAggregationBuilder.class
         );
         parser.declareBoolean(optionalConstructorArg(), KEYED_FIELD);
+        parser.declareInt(TimeSeriesAggregationBuilder::size, SIZE_FIELD);
+        parser.declareObjectArray((b, orders) -> {
+            var order = orders.size() > 1 ? BucketOrder.compound(orders) : orders.get(0);
+            b.order(order);
+        }, (p, c) -> InternalOrder.Parser.parseOrderParam(p), ORDER_FIELD);
         PARSER = parser.build();
     }
 
@@ -61,16 +72,22 @@ public class TimeSeriesAggregationBuilder extends AbstractAggregationBuilder<Tim
     ) {
         super(clone, factoriesBuilder, metadata);
         this.keyed = clone.keyed;
+        this.size = clone.size;
+        this.order = clone.order;
     }
 
     public TimeSeriesAggregationBuilder(StreamInput in) throws IOException {
         super(in);
         keyed = in.readBoolean();
+        size = in.readVInt();
+        order = in.readOptionalWriteable(InternalOrder.Streams::readOrder);
     }
 
     @Override
     protected void doWriteTo(StreamOutput out) throws IOException {
         out.writeBoolean(keyed);
+        out.writeVInt(size);
+        out.writeOptionalWriteable(order);
     }
 
     @Override
@@ -79,13 +96,30 @@ public class TimeSeriesAggregationBuilder extends AbstractAggregationBuilder<Tim
         AggregatorFactory parent,
         AggregatorFactories.Builder subFactoriesBuilder
     ) throws IOException {
-        return new TimeSeriesAggregationFactory(name, keyed, context, parent, subFactoriesBuilder, metadata);
+        if (order != null) {
+            // for now only allow validating by sub metric aggregator.
+            if (order instanceof InternalOrder.CompoundOrder compoundOrder) {
+                if (compoundOrder.orderElements()
+                    .stream()
+                    .anyMatch(bucketOrder -> (bucketOrder instanceof InternalOrder.Aggregation) == false)) {
+                    throw new IllegalArgumentException("unsupported bucket order");
+                }
+            } else if ((order instanceof InternalOrder.Aggregation) == false) {
+                throw new IllegalArgumentException("unsupported bucket order");
+            }
+        }
+
+        return new TimeSeriesAggregationFactory(name, keyed, size, order, context, parent, subFactoriesBuilder, metadata);
     }
 
     @Override
     protected XContentBuilder internalXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject();
         builder.field(KEYED_FIELD.getPreferredName(), keyed);
+        builder.field(SIZE_FIELD.getPreferredName(), size);
+        if (order != null) {
+            builder.field(ORDER_FIELD.getPreferredName(), order, params);
+        }
         builder.endObject();
         return builder;
     }
@@ -118,18 +152,36 @@ public class TimeSeriesAggregationBuilder extends AbstractAggregationBuilder<Tim
         this.keyed = keyed;
     }
 
+    public int size() {
+        return size;
+    }
+
+    public TimeSeriesAggregationBuilder size(int size) {
+        this.size = size;
+        return this;
+    }
+
+    public BucketOrder order() {
+        return order;
+    }
+
+    public TimeSeriesAggregationBuilder order(BucketOrder order) {
+        this.order = order;
+        return this;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         if (super.equals(o) == false) return false;
         TimeSeriesAggregationBuilder that = (TimeSeriesAggregationBuilder) o;
-        return keyed == that.keyed;
+        return keyed == that.keyed && size == that.size && Objects.equals(order, that.order);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), keyed);
+        return Objects.hash(super.hashCode(), keyed, size, order);
     }
 
     @Override

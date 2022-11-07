@@ -16,6 +16,7 @@ import org.elasticsearch.aggregations.bucket.histogram.AutoDateHistogramAggregat
 import org.elasticsearch.aggregations.bucket.histogram.InternalAutoDateHistogram;
 import org.elasticsearch.aggregations.pipeline.MovFnPipelineAggregationBuilder;
 import org.elasticsearch.aggregations.pipeline.MovingFunctionScript;
+import org.elasticsearch.plugins.ExtensiblePlugin;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.plugins.ScriptPlugin;
 import org.elasticsearch.plugins.SearchPlugin;
@@ -23,7 +24,7 @@ import org.elasticsearch.script.ScriptContext;
 
 import java.util.List;
 
-public class AggregationsPlugin extends Plugin implements SearchPlugin, ScriptPlugin {
+public class AggregationsPlugin extends Plugin implements ExtensiblePlugin, SearchPlugin, ScriptPlugin {
     @Override
     public List<AggregationSpec> getAggregations() {
         return List.of(

@@ -70,7 +70,7 @@ public class FilterByFilterAggregator extends FiltersAggregator {
             this.cardinality = cardinality;
             this.metadata = metadata;
             this.rewrittenTopLevelQuery = aggCtx.searcher().rewrite(aggCtx.query());
-            this.valid = parent == null && otherBucketKey == null;
+            this.valid = parent == null && otherBucketKey == null && aggCtx.isInSortOrderExecutionRequired() == false;
         }
 
         /**

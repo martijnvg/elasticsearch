@@ -55,7 +55,7 @@ import java.util.function.BiConsumer;
  * but {@linkplain DateHistogramAggregator} works when we can't precalculate
  * all of the {@link Rounding.Prepared#fixedRoundingPoints() fixed rounding points}.
  */
-class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAggregator {
+class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAggregator, TimestampBoundsAware {
     private static final Logger logger = LogManager.getLogger(DateHistogramAggregator.class);
 
     /**
@@ -141,6 +141,10 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
         CardinalityUpperBound cardinality,
         Map<String, Object> metadata
     ) throws IOException {
+        if (context.isInSortOrderExecutionRequired()) {
+            return null;
+        }
+
         long[] fixedRoundingPoints = preparedRounding.fixedRoundingPoints();
         if (fixedRoundingPoints == null) {
             logger.trace("couldn't adapt [{}], no fixed rounding points in [{}]", name, preparedRounding);
@@ -232,6 +236,8 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
 
     private final LongKeyedBucketOrds bucketOrds;
 
+    private final boolean timeSeries;
+
     DateHistogramAggregator(
         String name,
         AggregatorFactories factories,
@@ -262,6 +268,7 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
         this.formatter = valuesSourceConfig.format();
 
         bucketOrds = LongKeyedBucketOrds.build(bigArrays(), cardinality);
+        timeSeries = context.isInSortOrderExecutionRequired() && "@timestamp".equals(valuesSourceConfig.fieldContext().field());
     }
 
     @Override
@@ -274,6 +281,25 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
 
     @Override
     public LeafBucketCollector getLeafCollector(AggregationExecutionContext aggCtx, LeafBucketCollector sub) throws IOException {
+        if (timeSeries) {
+            return new LeafBucketCollectorBase(sub, null) {
+                @Override
+                public void collect(int doc, long bucket) throws IOException {
+                    long value = aggCtx.getTimestamp();
+                    long rounded = preparedRounding.round(value);
+                    if (hardBounds == null || hardBounds.contain(rounded)) {
+                        long bucketOrd = bucketOrds.add(bucket, rounded);
+                        if (bucketOrd < 0) { // already seen
+                            bucketOrd = -1 - bucketOrd;
+                            collectExistingBucket(sub, doc, bucketOrd);
+                        } else {
+                            collectBucket(sub, doc, bucketOrd);
+                        }
+                    }
+                }
+            };
+        }
+
         if (valuesSource == null) {
             return LeafBucketCollector.NO_OP_COLLECTOR;
         }
@@ -389,7 +415,13 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
         }
     }
 
-    static class FromDateRange extends AdaptingAggregator implements SizedBucketAggregator {
+    @Override
+    public long[] getBucketBoundary(long bucket) {
+        long bucketStart = bucketOrds.get(bucket);
+        return new long[] {bucketStart, preparedRounding.nextRoundingValue(bucketStart)};
+    }
+
+    static class FromDateRange extends AdaptingAggregator implements SizedBucketAggregator, TimestampBoundsAware {
         private final DocValueFormat format;
         private final Rounding rounding;
         private final Rounding.Prepared preparedRounding;
@@ -489,5 +521,12 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
                 return 1.0;
             }
         }
+
+        @Override
+        public long[] getBucketBoundary(long bucket) {
+            long bucketStart = fixedRoundingPoints[(int) bucket];
+            return new long[] {bucketStart, preparedRounding.nextRoundingValue(bucketStart)};
+        }
+
     }
 }

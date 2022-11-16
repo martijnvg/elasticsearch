@@ -17,7 +17,10 @@ import org.elasticsearch.search.aggregations.AggregationReduceContext;
 import org.elasticsearch.search.aggregations.InternalAggregation;
 import org.elasticsearch.search.aggregations.InternalAggregations;
 import org.elasticsearch.search.aggregations.InternalMultiBucketAggregation;
+import org.elasticsearch.search.aggregations.PipelineAggregationBuilder;
 import org.elasticsearch.search.aggregations.bucket.IteratorAndCurrent;
+import org.elasticsearch.search.aggregations.pipeline.BucketMetricsPipelineAggregationBuilder;
+import org.elasticsearch.search.aggregations.pipeline.BucketMetricsPipelineAggregator;
 import org.elasticsearch.xcontent.ObjectParser;
 import org.elasticsearch.xcontent.XContentBuilder;
 
@@ -138,13 +141,28 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
     }
 
     private final List<InternalTimeSeries.InternalBucket> buckets;
+    private final BucketMetricsPipelineAggregationBuilder<?> pipelineAggregationBuilder;
     private final boolean keyed;
     // bucketMap gets lazily initialized from buckets in getBucketByKey()
     private transient Map<String, InternalTimeSeries.InternalBucket> bucketMap;
 
     public InternalTimeSeries(String name, List<InternalTimeSeries.InternalBucket> buckets, boolean keyed, Map<String, Object> metadata) {
         super(name, metadata);
-        this.buckets = buckets;
+        this.pipelineAggregationBuilder = null;
+        this.buckets = Objects.requireNonNull(buckets);
+        this.keyed = keyed;
+    }
+
+    public InternalTimeSeries(
+        String name,
+        BucketMetricsPipelineAggregationBuilder<?> pipelineAggregationBuilder,
+        List<InternalTimeSeries.InternalBucket> buckets,
+        boolean keyed,
+        Map<String, Object> metadata
+    ) {
+        super(name, metadata);
+        this.pipelineAggregationBuilder = pipelineAggregationBuilder;
+        this.buckets = Objects.requireNonNull(buckets);
         this.keyed = keyed;
     }
 
@@ -153,6 +171,9 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
      */
     public InternalTimeSeries(StreamInput in) throws IOException {
         super(in);
+        pipelineAggregationBuilder = (BucketMetricsPipelineAggregationBuilder<?>) in.readOptionalNamedWriteable(
+            PipelineAggregationBuilder.class
+        );
         keyed = in.readBoolean();
         int size = in.readVInt();
         List<InternalTimeSeries.InternalBucket> buckets = new ArrayList<>(size);
@@ -194,6 +215,17 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
 
     @Override
     public InternalAggregation reduce(List<InternalAggregation> aggregations, AggregationReduceContext reduceContext) {
+        if (pipelineAggregationBuilder != null) {
+            // This agg response class is shared now between 3 versions of time series aggregator,
+            // but if TimeSeriesAggregator3 was the only implementation the reduce method would only do what happens in the if block.
+            BucketMetricsPipelineAggregator pipelineAggregator = (BucketMetricsPipelineAggregator) pipelineAggregationBuilder.create();
+            pipelineAggregator.start();
+            for (InternalBucket bucket : buckets) {
+                pipelineAggregator.collect(this, bucket);
+            }
+            return pipelineAggregator.end();
+        }
+
         // TODO: optimize single result case either by having a if check here and return aggregations.get(0) or
         // by overwriting the mustReduceOnSingleInternalAgg() method
         final int initialCapacity = aggregations.stream()
@@ -244,7 +276,8 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
                 reducedBucket = reduceBucket(bucketsWithSameKey, reduceContext);
             }
             BytesRef tsid = reducedBucket.key;
-            assert prevTsid == null || tsid.compareTo(prevTsid) > 0;
+            assert prevTsid == null || tsid.compareTo(prevTsid) > 0
+                : "prevTsid=" + TimeSeriesIdFieldMapper.decodeTsid(prevTsid) + " tsid=" + TimeSeriesIdFieldMapper.decodeTsid(tsid);
             reduced.buckets.add(reducedBucket);
             prevTsid = tsid;
         }

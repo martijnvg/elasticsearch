@@ -128,6 +128,21 @@ public abstract class BucketMetricsPipelineAggregator extends SiblingPipelineAgg
         return buildAggregation(metadata());
     }
 
+    public void start() {
+        preCollection();
+    }
+
+    public void collect(InternalMultiBucketAggregation<?, ?> agg, InternalMultiBucketAggregation.InternalBucket bucket) {
+        Double bucketValue = BucketHelpers.resolveBucketValue(agg, bucket, bucketsPaths()[0], gapPolicy);
+        if (bucketValue != null && Double.isNaN(bucketValue) == false) {
+            collectBucketValue(bucket.getKeyAsString(), bucketValue);
+        }
+    }
+
+    public InternalAggregation end() {
+        return buildAggregation(metadata());
+    }
+
     /**
      * Called before initial collection and between successive collection runs.
      * A chance to initialize or re-initialize state

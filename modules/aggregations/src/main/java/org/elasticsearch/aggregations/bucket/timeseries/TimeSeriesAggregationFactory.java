@@ -12,6 +12,7 @@ import org.elasticsearch.search.aggregations.Aggregator;
 import org.elasticsearch.search.aggregations.AggregatorFactories;
 import org.elasticsearch.search.aggregations.AggregatorFactory;
 import org.elasticsearch.search.aggregations.CardinalityUpperBound;
+import org.elasticsearch.search.aggregations.bucket.histogram.TimestampBoundsAware;
 import org.elasticsearch.search.aggregations.support.AggregationContext;
 
 import java.io.IOException;
@@ -36,6 +37,10 @@ public class TimeSeriesAggregationFactory extends AggregatorFactory {
     @Override
     protected Aggregator createInternal(Aggregator parent, CardinalityUpperBound cardinality, Map<String, Object> metadata)
         throws IOException {
-        return new TimeSeriesAggregator(name, factories, keyed, context, parent, cardinality, metadata);
+        if (parent instanceof TimestampBoundsAware) {
+            return new TimeSeriesAggregator3(name, factories, keyed, context, parent, metadata);
+        } else {
+            return new TimeSeriesAggregator(name, factories, keyed, context, parent, cardinality, metadata);
+        }
     }
 }

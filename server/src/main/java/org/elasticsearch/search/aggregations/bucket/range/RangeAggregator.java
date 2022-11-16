@@ -390,6 +390,9 @@ public abstract class RangeAggregator extends BucketsAggregator {
         if (false == context.enableRewriteToFilterByFilter()) {
             return null;
         }
+        if (context.isInSortOrderExecutionRequired()) {
+            return null;
+        }
         boolean wholeNumbersOnly = false == ((ValuesSource.Numeric) valuesSourceConfig.getValuesSource()).isFloatingPoint();
         FilterByFilterAggregator.AdapterBuilder<FromFilters<?>> filterByFilterBuilder = new FilterByFilterAggregator.AdapterBuilder<
             FromFilters<?>>(name, false, null, context, parent, cardinality, metadata) {

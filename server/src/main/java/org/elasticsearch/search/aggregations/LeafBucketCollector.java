@@ -42,6 +42,10 @@ public abstract class LeafBucketCollector implements LeafCollector {
         public boolean isNoop() {
             return true;
         }
+
+        @Override
+        public void clear() {
+        }
     };
 
     /**
@@ -89,5 +93,8 @@ public abstract class LeafBucketCollector implements LeafCollector {
     @Override
     public void setScorer(Scorable scorer) throws IOException {
         // no-op by default
+    }
+    public void clear() {
+        throw new UnsupportedOperationException();
     }
 }

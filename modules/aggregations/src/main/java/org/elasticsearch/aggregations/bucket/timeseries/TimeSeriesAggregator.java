@@ -19,6 +19,7 @@ import org.elasticsearch.search.aggregations.LeafBucketCollector;
 import org.elasticsearch.search.aggregations.LeafBucketCollectorBase;
 import org.elasticsearch.search.aggregations.bucket.BucketsAggregator;
 import org.elasticsearch.search.aggregations.bucket.terms.BytesKeyedBucketOrds;
+import org.elasticsearch.search.aggregations.pipeline.BucketMetricsPipelineAggregationBuilder;
 import org.elasticsearch.search.aggregations.support.AggregationContext;
 
 import java.io.IOException;
@@ -30,11 +31,13 @@ public class TimeSeriesAggregator extends BucketsAggregator {
 
     protected final BytesKeyedBucketOrds bucketOrds;
     private final boolean keyed;
+    private final BucketMetricsPipelineAggregationBuilder<?> pipeline;
 
     public TimeSeriesAggregator(
         String name,
         AggregatorFactories factories,
         boolean keyed,
+        BucketMetricsPipelineAggregationBuilder<?> pipeline,
         AggregationContext context,
         Aggregator parent,
         CardinalityUpperBound bucketCardinality,
@@ -42,6 +45,7 @@ public class TimeSeriesAggregator extends BucketsAggregator {
     ) throws IOException {
         super(name, factories, context, parent, CardinalityUpperBound.MANY, metadata);
         this.keyed = keyed;
+        this.pipeline = pipeline;
         bucketOrds = BytesKeyedBucketOrds.build(bigArrays(), bucketCardinality);
     }
 
@@ -80,7 +84,7 @@ public class TimeSeriesAggregator extends BucketsAggregator {
 
     @Override
     public InternalAggregation buildEmptyAggregation() {
-        return new InternalTimeSeries(name, new ArrayList<>(), false, metadata());
+        return new InternalTimeSeries(name, new ArrayList<>(), false, pipeline, metadata());
     }
 
     @Override
@@ -125,6 +129,6 @@ public class TimeSeriesAggregator extends BucketsAggregator {
     }
 
     InternalTimeSeries buildResult(InternalTimeSeries.InternalBucket[] topBuckets) {
-        return new InternalTimeSeries(name, List.of(topBuckets), keyed, metadata());
+        return new InternalTimeSeries(name, List.of(topBuckets), keyed, pipeline, metadata());
     }
 }

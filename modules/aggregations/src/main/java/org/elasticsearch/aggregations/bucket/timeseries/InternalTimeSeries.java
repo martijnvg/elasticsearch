@@ -17,7 +17,10 @@ import org.elasticsearch.search.aggregations.AggregationReduceContext;
 import org.elasticsearch.search.aggregations.InternalAggregation;
 import org.elasticsearch.search.aggregations.InternalAggregations;
 import org.elasticsearch.search.aggregations.InternalMultiBucketAggregation;
+import org.elasticsearch.search.aggregations.PipelineAggregationBuilder;
 import org.elasticsearch.search.aggregations.bucket.IteratorAndCurrent;
+import org.elasticsearch.search.aggregations.pipeline.BucketMetricsPipelineAggregationBuilder;
+import org.elasticsearch.search.aggregations.pipeline.BucketMetricsPipelineAggregator;
 import org.elasticsearch.xcontent.ObjectParser;
 import org.elasticsearch.xcontent.XContentBuilder;
 
@@ -139,13 +142,21 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
 
     private final List<InternalTimeSeries.InternalBucket> buckets;
     private final boolean keyed;
+    private final BucketMetricsPipelineAggregationBuilder<?> pipeline;
     // bucketMap gets lazily initialized from buckets in getBucketByKey()
     private transient Map<String, InternalTimeSeries.InternalBucket> bucketMap;
 
-    public InternalTimeSeries(String name, List<InternalTimeSeries.InternalBucket> buckets, boolean keyed, Map<String, Object> metadata) {
+    public InternalTimeSeries(
+        String name,
+        List<InternalTimeSeries.InternalBucket> buckets,
+        boolean keyed,
+        BucketMetricsPipelineAggregationBuilder<?> pipeline,
+        Map<String, Object> metadata
+    ) {
         super(name, metadata);
         this.buckets = buckets;
         this.keyed = keyed;
+        this.pipeline = pipeline;
     }
 
     /**
@@ -154,6 +165,7 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
     public InternalTimeSeries(StreamInput in) throws IOException {
         super(in);
         keyed = in.readBoolean();
+        pipeline = (BucketMetricsPipelineAggregationBuilder<?>) in.readNamedWriteable(PipelineAggregationBuilder.class);
         int size = in.readVInt();
         List<InternalTimeSeries.InternalBucket> buckets = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
@@ -216,7 +228,7 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
             }
         }
 
-        InternalTimeSeries reduced = new InternalTimeSeries(name, new ArrayList<>(initialCapacity), keyed, getMetadata());
+        InternalTimeSeries reduced = new InternalTimeSeries(name, new ArrayList<>(initialCapacity), keyed, pipeline, getMetadata());
         List<InternalBucket> bucketsWithSameKey = new ArrayList<>(aggregations.size());
         BytesRef prevTsid = null;
         while (pq.size() > 0) {
@@ -249,12 +261,18 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
             reduced.buckets.add(reducedBucket);
             prevTsid = tsid;
         }
-        return reduced;
+
+        // Builtin pipeline support:
+        BucketMetricsPipelineAggregator pipeline = (BucketMetricsPipelineAggregator) this.pipeline.create();
+        // hack, but reduce copies and keeps the entire agg tree and just add pipelines as an aggregation
+        // and doReduce just does the pipeline execution and just returns that as a result and
+        // the rest of the agg tree is left out
+        return pipeline.doReduce(InternalAggregations.from(List.of(reduced)), reduceContext);
     }
 
     @Override
     public InternalTimeSeries create(List<InternalBucket> buckets) {
-        return new InternalTimeSeries(name, buckets, keyed, metadata);
+        return new InternalTimeSeries(name, buckets, keyed, pipeline, metadata);
     }
 
     @Override

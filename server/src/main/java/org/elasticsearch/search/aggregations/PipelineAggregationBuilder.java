@@ -233,7 +233,7 @@ public abstract class PipelineAggregationBuilder
      *
      * @return The created aggregator
      */
-    protected abstract PipelineAggregator create();
+    public abstract PipelineAggregator create();
 
     /** Associate metadata with this {@link PipelineAggregationBuilder}. */
     @Override

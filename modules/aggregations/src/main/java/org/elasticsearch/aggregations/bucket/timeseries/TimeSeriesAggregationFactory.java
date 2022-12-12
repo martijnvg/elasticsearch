@@ -12,6 +12,7 @@ import org.elasticsearch.search.aggregations.Aggregator;
 import org.elasticsearch.search.aggregations.AggregatorFactories;
 import org.elasticsearch.search.aggregations.AggregatorFactory;
 import org.elasticsearch.search.aggregations.CardinalityUpperBound;
+import org.elasticsearch.search.aggregations.PipelineAggregationBuilder;
 import org.elasticsearch.search.aggregations.support.AggregationContext;
 
 import java.io.IOException;
@@ -20,10 +21,12 @@ import java.util.Map;
 public class TimeSeriesAggregationFactory extends AggregatorFactory {
 
     private final boolean keyed;
+    private final PipelineAggregationBuilder pipeline;
 
     public TimeSeriesAggregationFactory(
         String name,
         boolean keyed,
+        PipelineAggregationBuilder pipeline,
         AggregationContext context,
         AggregatorFactory parent,
         AggregatorFactories.Builder subFactoriesBuilder,
@@ -31,11 +34,12 @@ public class TimeSeriesAggregationFactory extends AggregatorFactory {
     ) throws IOException {
         super(name, context, parent, subFactoriesBuilder, metadata);
         this.keyed = keyed;
+        this.pipeline = pipeline;
     }
 
     @Override
     protected Aggregator createInternal(Aggregator parent, CardinalityUpperBound cardinality, Map<String, Object> metadata)
         throws IOException {
-        return new TimeSeriesAggregator(name, factories, keyed, context, parent, cardinality, metadata);
+        return new TimeSeriesAggregator(name, factories, keyed, pipeline, context, parent, cardinality, metadata);
     }
 }

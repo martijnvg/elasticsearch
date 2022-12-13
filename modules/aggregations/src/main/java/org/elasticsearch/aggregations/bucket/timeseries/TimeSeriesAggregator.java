@@ -80,7 +80,7 @@ public class TimeSeriesAggregator extends BucketsAggregator {
 
     @Override
     public InternalAggregation buildEmptyAggregation() {
-        return new InternalTimeSeries(name, new ArrayList<>(), false, metadata());
+        return new InternalTimeSeries(name, new ArrayList<>(), false, null, metadata());
     }
 
     @Override
@@ -125,6 +125,18 @@ public class TimeSeriesAggregator extends BucketsAggregator {
     }
 
     InternalTimeSeries buildResult(InternalTimeSeries.InternalBucket[] topBuckets) {
-        return new InternalTimeSeries(name, List.of(topBuckets), keyed, metadata());
+        String parentPath = getParentPath();
+        return new InternalTimeSeries(name, List.of(topBuckets), keyed, parentPath, metadata());
+    }
+
+    private String getParentPath() {
+        StringBuilder builder = new StringBuilder();
+        for (Aggregator parent = parent(); parent != null; parent = parent.parent()) {
+            if (builder.isEmpty() == false) {
+                builder.append('.');
+            }
+            builder.append(parent.name());
+        }
+        return builder.toString();
     }
 }

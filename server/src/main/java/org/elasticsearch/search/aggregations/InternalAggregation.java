@@ -106,7 +106,15 @@ public abstract class InternalAggregation implements Aggregation, NamedWriteable
         PipelineTree pipelinesForThisAgg
     ) {
         assert reduceContext.isFinalReduce();
-        for (PipelineAggregator pipelineAggregator : pipelinesForThisAgg.aggregators()) {
+        outer: for (PipelineAggregator pipelineAggregator : pipelinesForThisAgg.aggregators()) {
+            // HACK:
+            if (this instanceof InternalMultiBucketAggregation<?,?> emb) {
+                for (InternalMultiBucketAggregation.InternalBucket bucket : emb.getBuckets()) {
+                    if (bucket.getAggregations().get(pipelineAggregator.name()) != null) {
+                        continue outer;
+                    }
+                }
+            }
             reducedAggs = pipelineAggregator.reduce(reducedAggs, reduceContext);
         }
         return reducedAggs;

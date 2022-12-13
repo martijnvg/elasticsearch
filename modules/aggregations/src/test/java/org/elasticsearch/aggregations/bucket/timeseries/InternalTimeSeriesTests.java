@@ -85,7 +85,8 @@ public class InternalTimeSeriesTests extends AggregationMultiBucketAggregationTe
     @Override
     protected InternalTimeSeries createTestInstance(String name, Map<String, Object> metadata, InternalAggregations aggregations) {
         boolean keyed = randomBoolean();
-        return new InternalTimeSeries(name, randomBuckets(keyed, aggregations), keyed, metadata);
+        String parentPath = randomBoolean() ? randomAlphaOfLength(8) : null;
+        return new InternalTimeSeries(name, randomBuckets(keyed, aggregations), keyed, parentPath, metadata);
     }
 
     @Override
@@ -129,6 +130,7 @@ public class InternalTimeSeriesTests extends AggregationMultiBucketAggregationTe
                 new InternalBucket(new BytesRef("9"), 5, InternalAggregations.EMPTY, false)
             ),
             false,
+            null,
             Map.of()
         );
         InternalTimeSeries second = new InternalTimeSeries(
@@ -138,6 +140,7 @@ public class InternalTimeSeriesTests extends AggregationMultiBucketAggregationTe
                 new InternalBucket(new BytesRef("3"), 3, InternalAggregations.EMPTY, false)
             ),
             false,
+            null,
             Map.of()
         );
         InternalTimeSeries third = new InternalTimeSeries(
@@ -148,6 +151,7 @@ public class InternalTimeSeriesTests extends AggregationMultiBucketAggregationTe
                 new InternalBucket(new BytesRef("9"), 4, InternalAggregations.EMPTY, false)
             ),
             false,
+            null,
             Map.of()
         );
         AggregationReduceContext context = new AggregationReduceContext.ForFinal(

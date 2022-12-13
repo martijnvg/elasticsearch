@@ -79,6 +79,7 @@ public class TimeSeriesAggregationBuilder extends AbstractAggregationBuilder<Tim
         AggregatorFactory parent,
         AggregatorFactories.Builder subFactoriesBuilder
     ) throws IOException {
+        // add validation if parent agg has no pipeline aggregation targeting this agg or its sub aggs.
         return new TimeSeriesAggregationFactory(name, keyed, context, parent, subFactoriesBuilder, metadata);
     }
 

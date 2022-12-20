@@ -248,7 +248,10 @@ public abstract class IndexRouting {
         }
 
         @Override
-        public void process(IndexRequest indexRequest) {}
+        public void process(IndexRequest indexRequest) {
+            indexRequest.autoGenerateId();
+            indexRequest.id(null);
+        }
 
         @Override
         public int indexShard(String id, @Nullable String routing, XContentType sourceType, BytesReference source) {

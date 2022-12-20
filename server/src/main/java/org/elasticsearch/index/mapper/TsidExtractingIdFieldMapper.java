@@ -25,6 +25,7 @@ import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.query.SearchExecutionContext;
 
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Locale;
@@ -123,6 +124,8 @@ public class TsidExtractingIdFieldMapper extends IdFieldMapper {
         byte[] suffix = new byte[16];
         ByteUtils.writeLongLE(hash.h1, suffix, 0);
         ByteUtils.writeLongBE(timestamp, suffix, 8);   // Big Ending shrinks the inverted index by ~37%
+        // TODO: ideally append the _seq_no as unique suffix here
+        // (but the _seq_no is still unknown here)
 
         IndexRouting.ExtractFromSource indexRouting = (IndexRouting.ExtractFromSource) context.indexSettings().getIndexRouting();
         String id = routingBuilder.createId(suffix, () -> {
@@ -165,7 +168,27 @@ public class TsidExtractingIdFieldMapper extends IdFieldMapper {
         context.id(id);
 
         BytesRef uidEncoded = Uid.encodeId(context.id());
-        context.doc().add(new Field(NAME, uidEncoded, FIELD_TYPE));
+        context.doc().add(new Field(NAME, uidEncoded, FIELD_TYPE) {
+
+            // For now this is the best place I could find to add _seq_no to the _id.
+            // When createField(..) is invoked the _seq_no isn't available yet when indexing in primary shard.
+
+            @Override
+            public BytesRef binaryValue() {
+                BytesRef b = super.binaryValue();
+                String id = Uid.decodeId(b.bytes, b.offset, b.length);
+                byte[] idAsBytes = Base64.getUrlDecoder().decode(id);
+                assert idAsBytes.length == 20;
+
+                long seqNo = context.seqID().getSeqNo();
+                byte[] idWithSeqNoAsBytes = new byte[28];
+                System.arraycopy(idAsBytes, 0, idWithSeqNoAsBytes, 0, 20);
+                // TODO: Maybe serialize seqno as vlong?
+                ByteUtils.writeLongBE(seqNo, idWithSeqNoAsBytes, 20);
+                // TODO: maybe cache recomputing the _id? This is being invoked multiple times during indexing
+                return Uid.encodeId(Base64.getUrlEncoder().withoutPadding().encodeToString(idWithSeqNoAsBytes));
+            }
+        });
     }
 
     @Override

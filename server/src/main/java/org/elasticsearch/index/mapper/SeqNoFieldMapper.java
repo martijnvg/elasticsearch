@@ -84,6 +84,10 @@ public class SeqNoFieldMapper extends MetadataFieldMapper {
             this.primaryTerm.setLongValue(primaryTerm);
         }
 
+        public long getSeqNo() {
+            return (long) seqNo.numericValue();
+        }
+
         /**
          * Build and empty sequence ID who's values can be assigned later by
          * calling {@link #set}.

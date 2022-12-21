@@ -17,6 +17,7 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermInSetQuery;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.cluster.routing.IndexRouting;
+import org.elasticsearch.common.UUIDs;
 import org.elasticsearch.common.hash.MurmurHash3;
 import org.elasticsearch.common.hash.MurmurHash3.Hash128;
 import org.elasticsearch.common.util.ByteUtils;
@@ -25,6 +26,7 @@ import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.query.SearchExecutionContext;
 
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Locale;
@@ -115,15 +117,8 @@ public class TsidExtractingIdFieldMapper extends IdFieldMapper {
                 "data stream timestamp field [" + DataStreamTimestampFieldMapper.DEFAULT_PATH + "] is missing"
             );
         }
-        long timestamp = timestampFields[0].numericValue().longValue();
 
-        Hash128 hash = new Hash128();
-        MurmurHash3.hash128(tsid.bytes, tsid.offset, tsid.length, SEED, hash);
-
-        byte[] suffix = new byte[16];
-        ByteUtils.writeLongLE(hash.h1, suffix, 0);
-        ByteUtils.writeLongBE(timestamp, suffix, 8);   // Big Ending shrinks the inverted index by ~37%
-
+        byte[] suffix = Base64.getUrlDecoder().decode(UUIDs.base64UUID());
         IndexRouting.ExtractFromSource indexRouting = (IndexRouting.ExtractFromSource) context.indexSettings().getIndexRouting();
         String id = routingBuilder.createId(suffix, () -> {
             if (context.getDynamicMappers().isEmpty() == false) {

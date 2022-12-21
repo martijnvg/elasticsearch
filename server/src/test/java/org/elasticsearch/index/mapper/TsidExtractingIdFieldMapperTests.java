@@ -631,4 +631,18 @@ public class TsidExtractingIdFieldMapperTests extends MetadataMapperTestCase {
             equalTo("[" + testCase.expectedId + "][" + testCase.expectedTsid + "@" + testCase.expectedTimestamp + "]")
         );
     }
+
+    public void testAppendSeqNoToId() {
+        String result = TsidExtractingIdFieldMapper.appendSeqNoToId("abcdefg01234567890123456789", 5L);
+        assertThat(result, equalTo("abcdefg01234567890123456788F"));
+
+        result = TsidExtractingIdFieldMapper.appendSeqNoToId("abcdefg01234567890123456789", 500_000L);
+        assertThat(result, equalTo("abcdefg0123456789012345678-gwh4"));
+
+        result = TsidExtractingIdFieldMapper.appendSeqNoToId("abcdefg01234567890123456789", 5_000_000L);
+        assertThat(result, equalTo("abcdefg0123456789012345678_AlrEC"));
+
+        result = TsidExtractingIdFieldMapper.appendSeqNoToId("abcdefg01234567890123456789", Integer.MAX_VALUE - 1);
+        assertThat(result, equalTo("abcdefg0123456789012345678_-____Bw"));
+    }
 }

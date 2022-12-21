@@ -24,7 +24,6 @@ import org.elasticsearch.index.fielddata.FieldDataContext;
 import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.query.SearchExecutionContext;
 
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collection;
@@ -176,27 +175,36 @@ public class TsidExtractingIdFieldMapper extends IdFieldMapper {
 
             @Override
             public BytesRef binaryValue() {
+                // TODO: maybe cache appending _seq_no the _id? This is being invoked multiple times during indexing
                 BytesRef b = super.binaryValue();
                 String id = Uid.decodeId(b.bytes, b.offset, b.length);
-                byte[] idAsBytes = Base64.getUrlDecoder().decode(id);
-                assert idAsBytes.length == 20;
-
                 long seqNo = context.seqID().getSeqNo();
-                byte[] idWithSeqNoAsBytes = new byte[28];
-                System.arraycopy(idAsBytes, 0, idWithSeqNoAsBytes, 0, 20);
-                writeVLong(idWithSeqNoAsBytes, 20, seqNo);
-                // TODO: maybe cache recomputing the _id? This is being invoked multiple times during indexing
-                return Uid.encodeId(Base64.getUrlEncoder().withoutPadding().encodeToString(idWithSeqNoAsBytes));
+                return Uid.encodeId(appendSeqNoToId(id, seqNo));
             }
         });
     }
 
-    private static void writeVLong(byte[] buffer, int index, long value) {
+    static String appendSeqNoToId(String id, long seqNo) {
+        byte[] idAsBytes = Base64.getUrlDecoder().decode(id);
+        assert idAsBytes.length == 20;
+
+        byte[] idWithSeqNoAsBytes = new byte[28];
+        System.arraycopy(idAsBytes, 0, idWithSeqNoAsBytes, 0, 20);
+        int bytesSet = writeVLong(idWithSeqNoAsBytes, 20, seqNo);
+        idWithSeqNoAsBytes = Arrays.copyOf(idWithSeqNoAsBytes, 28 - (8 - bytesSet));
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(idWithSeqNoAsBytes);
+    }
+
+    private static int writeVLong(byte[] buffer, int index, long value) {
+        int bytesSet = 0;
         while ((value & ~0x7F) != 0) {
             buffer[index++] = ((byte) ((value & 0x7f) | 0x80));
             value >>>= 7;
+            bytesSet++;
         }
         buffer[index] = ((byte) value);
+        bytesSet++;
+        return bytesSet;
     }
 
     @Override

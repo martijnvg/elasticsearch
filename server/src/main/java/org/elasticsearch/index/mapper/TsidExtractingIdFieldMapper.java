@@ -24,6 +24,7 @@ import org.elasticsearch.index.fielddata.FieldDataContext;
 import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.query.SearchExecutionContext;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collection;
@@ -183,12 +184,19 @@ public class TsidExtractingIdFieldMapper extends IdFieldMapper {
                 long seqNo = context.seqID().getSeqNo();
                 byte[] idWithSeqNoAsBytes = new byte[28];
                 System.arraycopy(idAsBytes, 0, idWithSeqNoAsBytes, 0, 20);
-                // TODO: Maybe serialize seqno as vlong?
-                ByteUtils.writeLongBE(seqNo, idWithSeqNoAsBytes, 20);
+                writeVLong(idWithSeqNoAsBytes, 20, seqNo);
                 // TODO: maybe cache recomputing the _id? This is being invoked multiple times during indexing
                 return Uid.encodeId(Base64.getUrlEncoder().withoutPadding().encodeToString(idWithSeqNoAsBytes));
             }
         });
+    }
+
+    private static void writeVLong(byte[] buffer, int index, long value) {
+        while ((value & ~0x7F) != 0) {
+            buffer[index++] = ((byte) ((value & 0x7f) | 0x80));
+            value >>>= 7;
+        }
+        buffer[index] = ((byte) value);
     }
 
     @Override

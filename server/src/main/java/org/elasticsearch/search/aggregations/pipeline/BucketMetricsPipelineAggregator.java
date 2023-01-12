@@ -154,4 +154,19 @@ public abstract class BucketMetricsPipelineAggregator extends SiblingPipelineAgg
      *            for this bucket
      */
     protected abstract void collectBucketValue(String bucketKey, Double bucketValue);
+
+    public void start() {
+        preCollection();
+    }
+
+    public void collect(InternalMultiBucketAggregation<?, ?> agg, InternalMultiBucketAggregation.InternalBucket bucket) {
+        Double bucketValue = BucketHelpers.resolveBucketValue(agg, bucket, bucketsPaths()[0], gapPolicy);
+        if (bucketValue != null && Double.isNaN(bucketValue) == false) {
+            collectBucketValue(bucket.getKeyAsString(), bucketValue);
+        }
+    }
+
+    public InternalAggregation end() {
+        return buildAggregation(metadata());
+    }
 }

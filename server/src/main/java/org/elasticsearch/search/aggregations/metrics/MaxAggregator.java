@@ -103,6 +103,11 @@ class MaxAggregator extends NumericMetricsAggregator.SingleValue {
                 }
             }
 
+            @Override
+            public void clear() {
+                maxes.set(0, Double.NEGATIVE_INFINITY);
+            }
+
         };
     }
 

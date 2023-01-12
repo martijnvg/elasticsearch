@@ -17,6 +17,7 @@ import org.elasticsearch.common.Rounding.DateTimeUnit;
 import org.elasticsearch.core.CheckedFunction;
 import org.elasticsearch.core.Nullable;
 import org.elasticsearch.core.Releasables;
+import org.elasticsearch.index.TimestampBounds;
 import org.elasticsearch.search.DocValueFormat;
 import org.elasticsearch.search.aggregations.AdaptingAggregator;
 import org.elasticsearch.search.aggregations.AggregationExecutionContext;
@@ -55,7 +56,7 @@ import java.util.function.BiConsumer;
  * but {@linkplain DateHistogramAggregator} works when we can't precalculate
  * all of the {@link Rounding.Prepared#fixedRoundingPoints() fixed rounding points}.
  */
-class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAggregator {
+class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAggregator, TimestampBoundsAware {
     private static final Logger logger = LogManager.getLogger(DateHistogramAggregator.class);
 
     /**
@@ -389,7 +390,13 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
         }
     }
 
-    static class FromDateRange extends AdaptingAggregator implements SizedBucketAggregator {
+    @Override
+    public long[] getBucketBoundary(long bucket) {
+        long bucketStart = bucketOrds.get(bucket);
+        return new long[] {bucketStart, preparedRounding.nextRoundingValue(bucketStart)};
+    }
+
+    static class FromDateRange extends AdaptingAggregator implements SizedBucketAggregator, TimestampBoundsAware {
         private final DocValueFormat format;
         private final Rounding rounding;
         private final Rounding.Prepared preparedRounding;
@@ -488,6 +495,12 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
             } else {
                 return 1.0;
             }
+        }
+
+        @Override
+        public long[] getBucketBoundary(long bucket) {
+            long bucketStart = fixedRoundingPoints[(int) bucket];
+            return new long[] {bucketStart, preparedRounding.nextRoundingValue(bucketStart)};
         }
     }
 }

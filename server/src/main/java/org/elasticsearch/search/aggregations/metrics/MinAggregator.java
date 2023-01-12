@@ -102,6 +102,11 @@ public class MinAggregator extends NumericMetricsAggregator.SingleValue {
                 }
             }
 
+            @Override
+            public void clear() {
+                mins.set(0, Double.POSITIVE_INFINITY);
+            }
+
         };
     }
 

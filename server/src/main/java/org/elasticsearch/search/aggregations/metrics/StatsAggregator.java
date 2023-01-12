@@ -110,6 +110,15 @@ class StatsAggregator extends NumericMetricsAggregator.MultiValue {
                     maxes.set(bucket, max);
                 }
             }
+
+            @Override
+            public void clear() {
+                counts = bigArrays().newLongArray(1, true);
+                counts.set(0, 0);
+                compensations.set(0, 0);
+                mins.set(0, Double.POSITIVE_INFINITY);
+                maxes.set(0, Double.NEGATIVE_INFINITY);
+            }
         };
     }
 

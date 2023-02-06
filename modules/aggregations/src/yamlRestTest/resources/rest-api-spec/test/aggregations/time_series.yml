@@ -54,8 +54,8 @@ setup:
 ---
 "Basic test":
   - skip:
-      version: " - 8.5.99"
-      reason: Time series result serialization changed in 8.6.0
+      version: " - 8.6.99"
+      reason: Time series result serialization changed in 8.7.0
 
   - do:
       search:
@@ -78,6 +78,49 @@ setup:
 
   - match: { aggregations.ts.buckets.0.key: { "key": "foo" } }
   - match: { aggregations.ts.buckets.0.doc_count: 1 }
+
+---
+"Size param":
+  - skip:
+      version: " - 8.6.99"
+      reason: Time series result serialization changed in 8.7.0
+
+  - do:
+      search:
+        index: tsdb
+        body:
+          size: 0
+          aggs:
+            ts:
+              time_series:
+                keyed: false
+
+  - match: { hits.total.value: 7 }
+  - length: { aggregations.ts.buckets: 3 }
+
+  - match: { aggregations.ts.buckets.0.key: { "key": "bar" } }
+  - match: { aggregations.ts.buckets.0.doc_count: 4 }
+  - match: { aggregations.ts.buckets.1.key: { "key": "baz" } }
+  - match: { aggregations.ts.buckets.1.doc_count: 1 }
+  - match: { aggregations.ts.buckets.2.key: { "key": "foo" } }
+  - match: { aggregations.ts.buckets.2.doc_count: 2}
+
+  - do:
+      search:
+        index: tsdb
+        body:
+          size: 0
+          aggs:
+            ts:
+              time_series:
+                keyed: false
+                size: 1
+
+  - match: { hits.total.value: 7 }
+  - length: { aggregations.ts.buckets: 1 }
+  - match: { aggregations.ts.buckets.0.key: { "key": "bar" } }
+  - match: { aggregations.ts.buckets.0.doc_count: 4}
+
 
 ---
 "Sampler aggregation with nested time series aggregation failure":

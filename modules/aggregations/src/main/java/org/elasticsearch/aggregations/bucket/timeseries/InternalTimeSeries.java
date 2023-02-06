@@ -139,13 +139,21 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
 
     private final List<InternalTimeSeries.InternalBucket> buckets;
     private final boolean keyed;
+    private final int size;
     // bucketMap gets lazily initialized from buckets in getBucketByKey()
     private transient Map<String, InternalTimeSeries.InternalBucket> bucketMap;
 
-    public InternalTimeSeries(String name, List<InternalTimeSeries.InternalBucket> buckets, boolean keyed, Map<String, Object> metadata) {
+    public InternalTimeSeries(
+        String name,
+        List<InternalTimeSeries.InternalBucket> buckets,
+        boolean keyed,
+        Map<String, Object> metadata,
+        int size
+    ) {
         super(name, metadata);
         this.buckets = buckets;
         this.keyed = keyed;
+        this.size = size;
     }
 
     /**
@@ -154,6 +162,7 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
     public InternalTimeSeries(StreamInput in) throws IOException {
         super(in);
         keyed = in.readBoolean();
+        size = in.readVInt();
         int size = in.readVInt();
         List<InternalTimeSeries.InternalBucket> buckets = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
@@ -189,6 +198,7 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
     @Override
     protected void doWriteTo(StreamOutput out) throws IOException {
         out.writeBoolean(keyed);
+        out.writeVInt(size);
         out.writeCollection(buckets);
     }
 
@@ -216,7 +226,7 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
             }
         }
 
-        InternalTimeSeries reduced = new InternalTimeSeries(name, new ArrayList<>(initialCapacity), keyed, getMetadata());
+        InternalTimeSeries reduced = new InternalTimeSeries(name, new ArrayList<>(initialCapacity), keyed, getMetadata(), size);
         List<InternalBucket> bucketsWithSameKey = new ArrayList<>(aggregations.size());
         BytesRef prevTsid = null;
         while (pq.size() > 0) {
@@ -247,6 +257,9 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
             BytesRef tsid = reducedBucket.key;
             assert prevTsid == null || tsid.compareTo(prevTsid) > 0;
             reduced.buckets.add(reducedBucket);
+            if (reduced.buckets.size() >= size) {
+                break;
+            }
             prevTsid = tsid;
         }
         return reduced;
@@ -254,7 +267,7 @@ public class InternalTimeSeries extends InternalMultiBucketAggregation<InternalT
 
     @Override
     public InternalTimeSeries create(List<InternalBucket> buckets) {
-        return new InternalTimeSeries(name, buckets, keyed, metadata);
+        return new InternalTimeSeries(name, buckets, keyed, metadata, size);
     }
 
     @Override

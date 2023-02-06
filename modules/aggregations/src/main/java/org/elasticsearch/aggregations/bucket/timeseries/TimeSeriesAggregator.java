@@ -30,6 +30,7 @@ public class TimeSeriesAggregator extends BucketsAggregator {
 
     protected final BytesKeyedBucketOrds bucketOrds;
     private final boolean keyed;
+    private final int size;
 
     public TimeSeriesAggregator(
         String name,
@@ -38,10 +39,12 @@ public class TimeSeriesAggregator extends BucketsAggregator {
         AggregationContext context,
         Aggregator parent,
         CardinalityUpperBound bucketCardinality,
-        Map<String, Object> metadata
+        Map<String, Object> metadata,
+        int size
     ) throws IOException {
         super(name, factories, context, parent, CardinalityUpperBound.MANY, metadata);
         this.keyed = keyed;
+        this.size = size;
         bucketOrds = BytesKeyedBucketOrds.build(bigArrays(), bucketCardinality);
     }
 
@@ -66,6 +69,9 @@ public class TimeSeriesAggregator extends BucketsAggregator {
                 );
                 bucket.bucketOrd = ordsEnum.ord();
                 buckets.add(bucket);
+                if (buckets.size() >= size) {
+                    break;
+                }
             }
             allBucketsPerOrd[ordIdx] = buckets.toArray(new InternalTimeSeries.InternalBucket[0]);
         }
@@ -80,7 +86,7 @@ public class TimeSeriesAggregator extends BucketsAggregator {
 
     @Override
     public InternalAggregation buildEmptyAggregation() {
-        return new InternalTimeSeries(name, new ArrayList<>(), false, metadata());
+        return new InternalTimeSeries(name, new ArrayList<>(), false, metadata(), size);
     }
 
     @Override
@@ -125,6 +131,6 @@ public class TimeSeriesAggregator extends BucketsAggregator {
     }
 
     InternalTimeSeries buildResult(InternalTimeSeries.InternalBucket[] topBuckets) {
-        return new InternalTimeSeries(name, List.of(topBuckets), keyed, metadata());
+        return new InternalTimeSeries(name, List.of(topBuckets), keyed, metadata(), size);
     }
 }

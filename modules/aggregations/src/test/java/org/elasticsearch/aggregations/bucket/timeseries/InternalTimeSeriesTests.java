@@ -19,6 +19,7 @@ import org.elasticsearch.indices.breaker.NoneCircuitBreakerService;
 import org.elasticsearch.search.aggregations.Aggregation;
 import org.elasticsearch.search.aggregations.AggregationReduceContext;
 import org.elasticsearch.search.aggregations.InternalAggregations;
+import org.elasticsearch.search.aggregations.MultiBucketConsumerService;
 import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
 import org.elasticsearch.xcontent.ContextParser;
 
@@ -85,7 +86,8 @@ public class InternalTimeSeriesTests extends AggregationMultiBucketAggregationTe
     @Override
     protected InternalTimeSeries createTestInstance(String name, Map<String, Object> metadata, InternalAggregations aggregations) {
         boolean keyed = randomBoolean();
-        return new InternalTimeSeries(name, randomBuckets(keyed, aggregations), keyed, metadata);
+        int size = randomIntBetween(0, 1_000_000);
+        return new InternalTimeSeries(name, randomBuckets(keyed, aggregations), keyed, metadata, size);
     }
 
     @Override
@@ -129,7 +131,8 @@ public class InternalTimeSeriesTests extends AggregationMultiBucketAggregationTe
                 new InternalBucket(new BytesRef("9"), 5, InternalAggregations.EMPTY, false)
             ),
             false,
-            Map.of()
+            Map.of(),
+            MultiBucketConsumerService.DEFAULT_MAX_BUCKETS
         );
         InternalTimeSeries second = new InternalTimeSeries(
             "ts",
@@ -138,7 +141,8 @@ public class InternalTimeSeriesTests extends AggregationMultiBucketAggregationTe
                 new InternalBucket(new BytesRef("3"), 3, InternalAggregations.EMPTY, false)
             ),
             false,
-            Map.of()
+            Map.of(),
+            MultiBucketConsumerService.DEFAULT_MAX_BUCKETS
         );
         InternalTimeSeries third = new InternalTimeSeries(
             "ts",
@@ -148,7 +152,8 @@ public class InternalTimeSeriesTests extends AggregationMultiBucketAggregationTe
                 new InternalBucket(new BytesRef("9"), 4, InternalAggregations.EMPTY, false)
             ),
             false,
-            Map.of()
+            Map.of(),
+            MultiBucketConsumerService.DEFAULT_MAX_BUCKETS
         );
         AggregationReduceContext context = new AggregationReduceContext.ForFinal(
             new MockBigArrays(new MockPageCacheRecycler(Settings.EMPTY), new NoneCircuitBreakerService()),

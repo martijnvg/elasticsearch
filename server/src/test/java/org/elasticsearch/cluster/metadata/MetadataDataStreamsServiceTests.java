@@ -60,6 +60,7 @@ public class MetadataDataStreamsServiceTests extends MapperServiceTestCase {
 
         ClusterState originalState = ClusterState.builder(new ClusterName("dummy")).metadata(mb.build()).build();
         ClusterState newState = MetadataDataStreamsService.modifyDataStream(
+            null,
             originalState,
             List.of(DataStreamAction.addBackingIndex(dataStreamName, indexToAdd.getIndex().getName())),
             this::getMapperService
@@ -103,6 +104,7 @@ public class MetadataDataStreamsServiceTests extends MapperServiceTestCase {
         final IndexMetadata indexToRemove = backingIndices[randomIntBetween(0, numBackingIndices - 2)];
         ClusterState originalState = ClusterState.builder(new ClusterName("dummy")).metadata(mb.build()).build();
         ClusterState newState = MetadataDataStreamsService.modifyDataStream(
+            null,
             originalState,
             List.of(DataStreamAction.removeBackingIndex(dataStreamName, indexToRemove.getIndex().getName())),
             this::getMapperService
@@ -149,6 +151,7 @@ public class MetadataDataStreamsServiceTests extends MapperServiceTestCase {
         IllegalArgumentException e = expectThrows(
             IllegalArgumentException.class,
             () -> MetadataDataStreamsService.modifyDataStream(
+                null,
                 originalState,
                 List.of(DataStreamAction.removeBackingIndex(dataStreamName, indexToRemove.getIndex().getName())),
                 this::getMapperService
@@ -196,6 +199,7 @@ public class MetadataDataStreamsServiceTests extends MapperServiceTestCase {
 
         ClusterState originalState = ClusterState.builder(new ClusterName("dummy")).metadata(mb.build()).build();
         ClusterState newState = MetadataDataStreamsService.modifyDataStream(
+            null,
             originalState,
             List.of(
                 DataStreamAction.addBackingIndex(dataStreamName, indexToAdd.getIndex().getName()),
@@ -250,16 +254,19 @@ public class MetadataDataStreamsServiceTests extends MapperServiceTestCase {
 
         ClusterState originalState = ClusterState.builder(new ClusterName("dummy")).metadata(mb.build()).build();
         ClusterState newState = MetadataDataStreamsService.modifyDataStream(
+            null,
             originalState,
             List.of(DataStreamAction.addBackingIndex(dataStreamName, indexToAdd.getIndex().getName())),
             this::getMapperService
         );
         newState = MetadataDataStreamsService.modifyDataStream(
+            null,
             newState,
             List.of(DataStreamAction.removeBackingIndex(dataStreamName, indexToAdd.getIndex().getName())),
             this::getMapperService
         );
         newState = MetadataDataStreamsService.modifyDataStream(
+            null,
             newState,
             List.of(DataStreamAction.addBackingIndex(dataStreamName, indexToAdd.getIndex().getName())),
             this::getMapperService
@@ -298,6 +305,7 @@ public class MetadataDataStreamsServiceTests extends MapperServiceTestCase {
         IllegalArgumentException e = expectThrows(
             IllegalArgumentException.class,
             () -> MetadataDataStreamsService.modifyDataStream(
+                null,
                 originalState,
                 List.of(DataStreamAction.addBackingIndex(missingDataStream, indexToAdd.getIndex().getName())),
                 this::getMapperService
@@ -330,6 +338,7 @@ public class MetadataDataStreamsServiceTests extends MapperServiceTestCase {
         IllegalArgumentException e = expectThrows(
             IllegalArgumentException.class,
             () -> MetadataDataStreamsService.modifyDataStream(
+                null,
                 originalState,
                 List.of(DataStreamAction.addBackingIndex(dataStreamName, missingIndex)),
                 this::getMapperService
@@ -357,6 +366,7 @@ public class MetadataDataStreamsServiceTests extends MapperServiceTestCase {
         var brokenState = ClusterState.builder(state).metadata(Metadata.builder(state.getMetadata()).put(broken).build()).build();
 
         var result = MetadataDataStreamsService.modifyDataStream(
+            null,
             brokenState,
             List.of(DataStreamAction.removeBackingIndex(dataStreamName, broken.getIndices().get(0).getName())),
             this::getMapperService
@@ -373,6 +383,7 @@ public class MetadataDataStreamsServiceTests extends MapperServiceTestCase {
         var e = expectThrows(
             IllegalArgumentException.class,
             () -> MetadataDataStreamsService.modifyDataStream(
+                null,
                 state,
                 List.of(DataStreamAction.removeBackingIndex(dataStreamName, indexToRemove)),
                 this::getMapperService

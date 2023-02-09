@@ -1401,6 +1401,14 @@ public class MetadataCreateIndexService {
         return validationErrors;
     }
 
+    public Set<IndexSettingProvider> getIndexSettingProviders() {
+        return indexSettingProviders;
+    }
+
+    public NamedXContentRegistry getxContentRegistry() {
+        return xContentRegistry;
+    }
+
     /**
      * Validates that the configured index data path (if any) is a sub-path of the configured shared data path (if any)
      *

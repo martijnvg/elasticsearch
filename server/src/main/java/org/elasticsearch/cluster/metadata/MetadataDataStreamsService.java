@@ -9,20 +9,28 @@
 package org.elasticsearch.cluster.metadata;
 
 import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.action.admin.indices.create.CreateIndexClusterStateUpdateRequest;
 import org.elasticsearch.action.datastreams.ModifyDataStreamsAction;
 import org.elasticsearch.action.support.master.AcknowledgedResponse;
 import org.elasticsearch.cluster.AckedClusterStateUpdateTask;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.ClusterStateUpdateTask;
+import org.elasticsearch.cluster.metadata.DataStreamAction.Type;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.Priority;
+import org.elasticsearch.common.compress.CompressedXContent;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.time.DateFormatter;
 import org.elasticsearch.core.SuppressForbidden;
 import org.elasticsearch.index.Index;
+import org.elasticsearch.index.IndexSettings;
+import org.elasticsearch.index.mapper.DateFieldMapper;
 import org.elasticsearch.index.mapper.MapperService;
 import org.elasticsearch.indices.IndicesService;
 
 import java.io.IOException;
+import java.time.Instant;
+import java.util.List;
 import java.util.function.Function;
 
 /**
@@ -30,12 +38,20 @@ import java.util.function.Function;
  */
 public class MetadataDataStreamsService {
 
+    static final DateFormatter FORMATTER = DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER;
+
     private final ClusterService clusterService;
     private final IndicesService indicesService;
+    private final MetadataCreateIndexService metadataCreateIndexService;
 
-    public MetadataDataStreamsService(ClusterService clusterService, IndicesService indicesService) {
+    public MetadataDataStreamsService(
+        ClusterService clusterService,
+        IndicesService indicesService,
+        MetadataCreateIndexService metadataCreateIndexService
+    ) {
         this.clusterService = clusterService;
         this.indicesService = indicesService;
+        this.metadataCreateIndexService = metadataCreateIndexService;
     }
 
     public void modifyDataStream(final ModifyDataStreamsAction.Request request, final ActionListener<AcknowledgedResponse> listener) {
@@ -45,7 +61,7 @@ public class MetadataDataStreamsService {
             submitUnbatchedTask("update-backing-indices", new AckedClusterStateUpdateTask(Priority.URGENT, request, listener) {
                 @Override
                 public ClusterState execute(ClusterState currentState) {
-                    return modifyDataStream(currentState, request.getActions(), indexMetadata -> {
+                    return modifyDataStream(metadataCreateIndexService, currentState, request.getActions(), indexMetadata -> {
                         try {
                             return indicesService.createIndexMapperServiceForValidation(indexMetadata);
                         } catch (IOException e) {
@@ -65,30 +81,38 @@ public class MetadataDataStreamsService {
     /**
      * Computes the resulting cluster state after applying all requested data stream modifications in order.
      *
-     * @param currentState current cluster state
-     * @param actions      ordered list of modifications to perform
+     * @param metadataCreateIndexService The service that creates backing indices for actions of type {@link Type#CREATE_TIME_SERIES_INDEX}
+     * @param clusterState               the cluster state
+     * @param actions                    ordered list of modifications to perform
      * @return resulting cluster state after all modifications have been performed
      */
     static ClusterState modifyDataStream(
-        ClusterState currentState,
+        MetadataCreateIndexService metadataCreateIndexService,
+        ClusterState clusterState,
         Iterable<DataStreamAction> actions,
         Function<IndexMetadata, MapperService> mapperSupplier
     ) {
-        Metadata updatedMetadata = currentState.metadata();
-
+        Metadata updatedMetadata = clusterState.metadata();
         for (var action : actions) {
             Metadata.Builder builder = Metadata.builder(updatedMetadata);
-            if (action.getType() == DataStreamAction.Type.ADD_BACKING_INDEX) {
+            if (action.getType() == Type.ADD_BACKING_INDEX) {
                 addBackingIndex(updatedMetadata, builder, mapperSupplier, action.getDataStream(), action.getIndex());
-            } else if (action.getType() == DataStreamAction.Type.REMOVE_BACKING_INDEX) {
+            } else if (action.getType() == Type.REMOVE_BACKING_INDEX) {
                 removeBackingIndex(updatedMetadata, builder, action.getDataStream(), action.getIndex());
+            } else if (action.getType() == Type.CREATE_TIME_SERIES_INDEX) {
+                // Skip do in the second loop, because this action updates more than just Metadata
             } else {
                 throw new IllegalStateException("unsupported data stream action type [" + action.getClass().getName() + "]");
             }
             updatedMetadata = builder.build();
         }
-
-        return ClusterState.builder(currentState).metadata(updatedMetadata).build();
+        clusterState = ClusterState.builder(clusterState).metadata(updatedMetadata).build();
+        for (var action : actions) {
+            if (action.getType() == Type.CREATE_TIME_SERIES_INDEX) {
+                clusterState = createTimeSeriesIndex(metadataCreateIndexService, clusterState, action);
+            }
+        }
+        return clusterState;
     }
 
     private static void addBackingIndex(
@@ -141,6 +165,65 @@ public class MetadataDataStreamsService {
                     .settingsVersion(indexMetadata.getSettingsVersion() + 1)
             );
         }
+    }
+
+    private static ClusterState createTimeSeriesIndex(
+        MetadataCreateIndexService metadataCreateIndexService,
+        ClusterState current,
+        DataStreamAction action
+    ) {
+        var dataStream = validateDataStream(current.metadata(), action.getDataStream()).getDataStream();
+        var templateName = MetadataIndexTemplateService.findV2Template(current.metadata(), action.getDataStream(), false);
+
+        final List<CompressedXContent> mappings;
+        try {
+            mappings = MetadataCreateIndexService.collectV2Mappings(
+                null,
+                current,
+                templateName,
+                metadataCreateIndexService.getxContentRegistry(),
+                action.getDataStream()
+            );
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        final var templateSettings = MetadataIndexTemplateService.resolveSettings(current.metadata(), templateName);
+
+        final var now = Instant.now();
+        Settings.Builder additionalSettings = Settings.builder();
+        for (var indexSettingProvider : metadataCreateIndexService.getIndexSettingProviders()) {
+            additionalSettings.put(
+                indexSettingProvider.getAdditionalIndexSettings(
+                    action.getIndex(),
+                    dataStream.getName(),
+                    true,
+                    current.metadata(),
+                    now,
+                    templateSettings,
+                    mappings
+                )
+            );
+        }
+
+        additionalSettings.put(templateSettings);
+        var start = FORMATTER.format(action.getTimeSeriesStart());
+        var end = FORMATTER.format(action.getTimeSeriesEnd());
+        additionalSettings.put(IndexSettings.TIME_SERIES_START_TIME.getKey(), start);
+        additionalSettings.put(IndexSettings.TIME_SERIES_END_TIME.getKey(), end);
+        additionalSettings.put(IndexMetadata.SETTING_INDEX_HIDDEN, true);
+
+        var request = new CreateIndexClusterStateUpdateRequest("create_tsdb_index", action.getIndex(), action.getIndex());
+        request.settings(additionalSettings.build());
+        request.dataStreamName(action.getDataStream());
+        try {
+            current = metadataCreateIndexService.applyCreateIndexRequest(current, request, true, ActionListener.noop());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        var updateDataStream = dataStream.addBackingIndex(current.metadata(), current.metadata().index(action.getIndex()).getIndex());
+        var mdBuilder = Metadata.builder(current.metadata());
+        mdBuilder.put(updateDataStream);
+        return ClusterState.builder(current).metadata(mdBuilder).build();
     }
 
     private static IndexAbstraction.DataStream validateDataStream(Metadata metadata, String dataStreamName) {

@@ -707,7 +707,11 @@ public class Node implements Closeable {
                 clusterService,
                 metadataCreateIndexService
             );
-            final MetadataDataStreamsService metadataDataStreamsService = new MetadataDataStreamsService(clusterService, indicesService);
+            final MetadataDataStreamsService metadataDataStreamsService = new MetadataDataStreamsService(
+                clusterService,
+                indicesService,
+                metadataCreateIndexService
+            );
 
             final MetadataUpdateSettingsService metadataUpdateSettingsService = new MetadataUpdateSettingsService(
                 clusterService,

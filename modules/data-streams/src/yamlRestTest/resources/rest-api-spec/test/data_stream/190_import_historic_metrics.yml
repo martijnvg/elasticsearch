@@ -1,0 +1,128 @@
+setup:
+  - skip:
+      version: " - 8.7.99"
+      reason: importing historic metrics into tsdb introduced in 8.8.0
+      features: allowed_warnings
+
+  - do:
+      allowed_warnings:
+        - "index template [my-template1] has index patterns [k8s*] matching patterns from existing older templates [global] with patterns (global => [*]); this template [my-template1] will take precedence during new index creation"
+      indices.put_index_template:
+        name: my-template1
+        body:
+          index_patterns: [k8s*]
+          data_stream: {}
+          template:
+            settings:
+              index:
+                mode: time_series
+                number_of_replicas: 0
+                number_of_shards: 2
+                routing_path: [metricset]
+            mappings:
+              properties:
+                "@timestamp":
+                  type: date
+                metricset:
+                  type: keyword
+                  time_series_dimension: true
+                k8s:
+                  properties:
+                    pod:
+                      properties:
+                        uid:
+                          type: keyword
+                          time_series_dimension: true
+                        name:
+                          type: keyword
+                        ip:
+                          type: ip
+                        network:
+                          properties:
+                            tx:
+                              type: long
+                            rx:
+                              type: long
+  - do:
+      ingest.put_pipeline:
+        id: "my_pipeline"
+        body:  >
+          {
+            "description": "_description",
+            "processors": [
+              {
+                "set" : {
+                  "field": "pipeline",
+                  "value": "pipeline"
+                }
+              }
+            ]
+          }
+
+  - do:
+      indices.create_data_stream:
+        name: k8s
+
+  - do:
+      indices.modify_data_stream:
+        body:
+          actions:
+            - create_time_series_index:
+                data_stream: k8s
+                time_series_start: 2021-04-28T00:00:00Z
+                time_series_end: 2021-04-29T00:00:00Z
+
+  - do:
+      bulk:
+        refresh: true
+        index: k8s
+        body:
+          - '{"create": {"pipeline" : "my_pipeline"}}'
+          - '{"@timestamp": "2021-04-28T18:50:04.467Z", "metricset": "pod", "k8s": {"pod": {"name": "cat", "uid":"947e4ced-1786-4e53-9e0c-5c447e959507", "ip": "10.10.55.1", "network": {"tx": 2001818691, "rx": 802133794}}}}'
+          - '{"create": {"pipeline" : "my_pipeline"}}'
+          - '{"@timestamp": "2021-04-28T18:50:24.467Z", "metricset": "pod", "k8s": {"pod": {"name": "cat", "uid":"947e4ced-1786-4e53-9e0c-5c447e959507", "ip": "10.10.55.1", "network": {"tx": 2005177954, "rx": 801479970}}}}'
+          - '{"create": {"pipeline" : "my_pipeline"}}'
+          - '{"@timestamp": "2021-04-28T18:50:44.467Z", "metricset": "pod", "k8s": {"pod": {"name": "cat", "uid":"947e4ced-1786-4e53-9e0c-5c447e959507", "ip": "10.10.55.1", "network": {"tx": 2006223737, "rx": 802337279}}}}'
+          - '{"create": {"pipeline" : "my_pipeline"}}'
+          - '{"@timestamp": "2021-04-28T18:51:04.467Z", "metricset": "pod", "k8s": {"pod": {"name": "cat", "uid":"947e4ced-1786-4e53-9e0c-5c447e959507", "ip": "10.10.55.2", "network": {"tx": 2012916202, "rx": 803685721}}}}'
+          - '{"create": {}}'
+          - '{"@timestamp": "2021-04-28T18:50:03.142Z", "metricset": "pod", "k8s": {"pod": {"name": "dog", "uid":"df3145b3-0563-4d3b-a0f7-897eb2876ea9", "ip": "10.10.55.3", "network": {"tx": 1434521831, "rx": 530575198}}}}'
+          - '{"create": {}}'
+          - '{"@timestamp": "2021-04-28T18:50:23.142Z", "metricset": "pod", "k8s": {"pod": {"name": "dog", "uid":"df3145b3-0563-4d3b-a0f7-897eb2876ea9", "ip": "10.10.55.3", "network": {"tx": 1434577921, "rx": 530600088}}}}'
+          - '{"create": {}}'
+          - '{"@timestamp": "2021-04-28T18:50:53.142Z", "metricset": "pod", "k8s": {"pod": {"name": "dog", "uid":"df3145b3-0563-4d3b-a0f7-897eb2876ea9", "ip": "10.10.55.3", "network": {"tx": 1434587694, "rx": 530604797}}}}'
+          - '{"create": {}}'
+          - '{"@timestamp": "2021-04-28T18:51:03.142Z", "metricset": "pod", "k8s": {"pod": {"name": "dog", "uid":"df3145b3-0563-4d3b-a0f7-897eb2876ea9", "ip": "10.10.55.3", "network": {"tx": 1434595272, "rx": 530605511}}}}'
+
+---
+created the data stream:
+  - skip:
+      version: " - 8.6.99"
+      reason: importing historic metrics into tsdb introduced in 8.7.0
+
+  - do:
+      indices.get_data_stream:
+        name: '*'
+  - length: { data_streams: 1 }
+  - match: { data_streams.0.name: 'k8s' }
+  - match: { data_streams.0.timestamp_field.name: '@timestamp' }
+  - match: { data_streams.0.generation: 2 }
+  - length: { data_streams.0.indices: 2 }
+  - match: { data_streams.0.indices.0.index_name: .ds-k8s-2021.04.28.12.00.00.000 }
+  - match: { data_streams.0.indices.1.index_name: '/\.ds-k8s-\d{4}\.\d{2}\.\d{2}-000001/' }
+  - match: { data_streams.0.status: 'GREEN' }
+  - match: { data_streams.0.template: 'my-template1' }
+  - match: { data_streams.0.hidden: false }
+  - match: { data_streams.0.system: false }
+  - match: { data_streams.0.time_series.temporal_ranges.0.start: 2021-04-28T00:00:00.000Z }
+  - match: { data_streams.0.time_series.temporal_ranges.0.end: 2021-04-29T00:00:00.000Z }
+  - set:  { data_streams.0.indices.0.index_name: backing_index }
+
+  - do:
+      indices.get:
+        index: $backing_index
+        human: true
+  - match: { $body.$backing_index.data_stream: 'k8s' }
+  - match: { $body.$backing_index.settings.index.mode: 'time_series' }
+  - match: { $body.$backing_index.settings.index.time_series.start_time: '2021-04-28T00:00:00.000Z' }
+  - match: { $body.$backing_index.settings.index.time_series.end_time: '2021-04-29T00:00:00.000Z' }

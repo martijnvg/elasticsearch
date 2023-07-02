@@ -13,8 +13,6 @@ import org.elasticsearch.index.mapper.NumberFieldMapper;
 import org.elasticsearch.xpack.aggregatemetric.mapper.AggregateDoubleMetricFieldMapper;
 import org.elasticsearch.xpack.aggregatemetric.mapper.AggregateDoubleMetricFieldMapper.AggregateDoubleMetricFieldType;
 
-import java.util.List;
-
 public class AggregateMetricFieldValueFetcher extends FieldValueFetcher {
 
     private final AggregateDoubleMetricFieldType aggMetricFieldType;
@@ -24,18 +22,19 @@ public class AggregateMetricFieldValueFetcher extends FieldValueFetcher {
     protected AggregateMetricFieldValueFetcher(
         MappedFieldType fieldType,
         AggregateDoubleMetricFieldType aggMetricFieldType,
-        IndexFieldData<?> fieldData
+        IndexFieldData<?> fieldData,
+        int numSegments
     ) {
-        super(fieldType.name(), fieldType, fieldData);
+        super(fieldType.name(), fieldType, fieldData, numSegments);
         this.aggMetricFieldType = aggMetricFieldType;
-        this.rollupFieldProducer = createRollupFieldProducer();
+        this.rollupFieldProducer = createRollupFieldProducer(numSegments);
     }
 
     public AbstractDownsampleFieldProducer rollupFieldProducer() {
         return rollupFieldProducer;
     }
 
-    private AbstractDownsampleFieldProducer createRollupFieldProducer() {
+    private AbstractDownsampleFieldProducer createRollupFieldProducer(int numSegments) {
         AggregateDoubleMetricFieldMapper.Metric metric = null;
         for (var e : aggMetricFieldType.getMetricFields().entrySet()) {
             NumberFieldMapper.NumberFieldType metricSubField = e.getValue();
@@ -56,10 +55,10 @@ public class AggregateMetricFieldValueFetcher extends FieldValueFetcher {
                 // To compute value_count summary, we must sum all field values
                 case value_count -> new MetricFieldProducer.Sum(AggregateDoubleMetricFieldMapper.Metric.value_count.name());
             };
-            return new MetricFieldProducer.GaugeMetricFieldProducer(aggMetricFieldType.name(), List.of(metricOperation));
+            return MetricFieldProducer.gauge(aggMetricFieldType.name(), new MetricFieldProducer.Metric[] { metricOperation }, numSegments);
         } else {
             // If field is not a metric, we downsample it as a label
-            return new LabelFieldProducer.AggregateMetricFieldProducer.AggregateMetricFieldProducer(aggMetricFieldType.name(), metric);
+            return new LabelFieldProducer(aggMetricFieldType.name(), metric, numSegments);
         }
     }
 }

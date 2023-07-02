@@ -7,14 +7,14 @@
 
 package org.elasticsearch.xpack.downsample;
 
-import org.elasticsearch.index.fielddata.FormattedDocValues;
+import org.apache.lucene.index.LeafReaderContext;
 
 import java.io.IOException;
 
 /**
  * Base class that reads fields from the source index and produces their downsampled values
  */
-abstract class AbstractDownsampleFieldProducer implements DownsampleFieldSerializer {
+abstract sealed class AbstractDownsampleFieldProducer implements DownsampleFieldSerializer permits LabelFieldProducer, MetricFieldProducer {
 
     private final String name;
     protected boolean isEmpty;
@@ -43,5 +43,7 @@ abstract class AbstractDownsampleFieldProducer implements DownsampleFieldSeriali
         return isEmpty;
     }
 
-    public abstract void collect(FormattedDocValues docValues, int docId) throws IOException;
+    public abstract void setLeafReaderContext(LeafReaderContext context, FieldValueFetcher fieldValueFetcher);
+
+    public abstract void collect(int leafOrdinal, int docId) throws IOException;
 }

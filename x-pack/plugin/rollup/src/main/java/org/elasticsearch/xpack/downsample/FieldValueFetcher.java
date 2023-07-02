@@ -10,6 +10,8 @@ package org.elasticsearch.xpack.downsample;
 import org.apache.lucene.index.LeafReaderContext;
 import org.elasticsearch.index.fielddata.FormattedDocValues;
 import org.elasticsearch.index.fielddata.IndexFieldData;
+import org.elasticsearch.index.fielddata.IndexNumericFieldData;
+import org.elasticsearch.index.fielddata.SortedNumericDoubleValues;
 import org.elasticsearch.index.mapper.MappedFieldType;
 import org.elasticsearch.index.mapper.NumberFieldMapper;
 import org.elasticsearch.index.query.SearchExecutionContext;
@@ -33,40 +35,46 @@ class FieldValueFetcher {
     protected final IndexFieldData<?> fieldData;
     protected final AbstractDownsampleFieldProducer rollupFieldProducer;
 
-    protected FieldValueFetcher(String name, MappedFieldType fieldType, IndexFieldData<?> fieldData) {
+    protected FieldValueFetcher(String name, MappedFieldType fieldType, IndexFieldData<?> fieldData, int numSegments) {
         this.name = name;
         this.fieldType = fieldType;
         this.fieldData = fieldData;
-        this.rollupFieldProducer = createRollupFieldProducer();
+        this.rollupFieldProducer = createRollupFieldProducer(numSegments);
     }
 
     public String name() {
         return name;
     }
 
-    public FormattedDocValues getLeaf(LeafReaderContext context) {
+    public FormattedDocValues getFormattedDocValues(LeafReaderContext context) {
         DocValueFormat format = fieldType.docValueFormat(null, null);
         return fieldData.load(context).getFormattedValues(format);
+    }
+
+    public SortedNumericDoubleValues getSortedNumericDoubleValues(LeafReaderContext context) {
+        if (fieldData instanceof IndexNumericFieldData numericFieldData) {
+            return numericFieldData.load(context).getDoubleValues();
+        } else {
+            assert false;
+            return null;
+        }
     }
 
     public AbstractDownsampleFieldProducer rollupFieldProducer() {
         return rollupFieldProducer;
     }
 
-    private AbstractDownsampleFieldProducer createRollupFieldProducer() {
+    private AbstractDownsampleFieldProducer createRollupFieldProducer(int numSegments) {
         if (fieldType.getMetricType() != null) {
             return switch (fieldType.getMetricType()) {
-                case GAUGE -> new MetricFieldProducer.GaugeMetricFieldProducer(name());
-                case COUNTER -> new MetricFieldProducer.CounterMetricFieldProducer(name());
+                case GAUGE -> MetricFieldProducer.gauge(name(), numSegments);
+                case COUNTER -> MetricFieldProducer.counter(name(), numSegments);
                 // TODO: Support POSITION in downsampling
                 case POSITION -> throw new IllegalArgumentException("Unsupported metric type [position] for down-sampling");
             };
         } else {
             // If field is not a metric, we downsample it as a label
-            if ("histogram".equals(fieldType.typeName())) {
-                return new LabelFieldProducer.HistogramLastLabelFieldProducer(name());
-            }
-            return new LabelFieldProducer.LabelLastValueFieldProducer(name());
+            return new LabelFieldProducer(name(), numSegments);
         }
     }
 
@@ -74,6 +82,7 @@ class FieldValueFetcher {
      * Retrieve field value fetchers for a list of fields.
      */
     static List<FieldValueFetcher> create(SearchExecutionContext context, String[] fields) {
+        int numSegments = context.searcher().getLeafContexts().size();
         List<FieldValueFetcher> fetchers = new ArrayList<>();
         for (String field : fields) {
             MappedFieldType fieldType = context.getFieldType(field);
@@ -85,7 +94,7 @@ class FieldValueFetcher {
                 for (NumberFieldMapper.NumberFieldType metricSubField : aggMetricFieldType.getMetricFields().values()) {
                     if (context.fieldExistsInIndex(metricSubField.name())) {
                         IndexFieldData<?> fieldData = context.getForField(metricSubField, MappedFieldType.FielddataOperation.SEARCH);
-                        fetchers.add(new AggregateMetricFieldValueFetcher(metricSubField, aggMetricFieldType, fieldData));
+                        fetchers.add(new AggregateMetricFieldValueFetcher(metricSubField, aggMetricFieldType, fieldData, numSegments));
                     }
                 }
             } else {
@@ -94,7 +103,7 @@ class FieldValueFetcher {
                     final String fieldName = context.isMultiField(field)
                         ? fieldType.name().substring(0, fieldType.name().lastIndexOf('.'))
                         : fieldType.name();
-                    fetchers.add(new FieldValueFetcher(fieldName, fieldType, fieldData));
+                    fetchers.add(new FieldValueFetcher(fieldName, fieldType, fieldData, numSegments));
                 }
             }
         }

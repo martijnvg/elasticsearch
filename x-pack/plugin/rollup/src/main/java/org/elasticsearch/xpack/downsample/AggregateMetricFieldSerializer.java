@@ -12,7 +12,7 @@ import org.elasticsearch.xcontent.XContentBuilder;
 import java.io.IOException;
 import java.util.Collection;
 
-public class AggregateMetricFieldSerializer implements DownsampleFieldSerializer {
+final class AggregateMetricFieldSerializer implements DownsampleFieldSerializer {
     private final Collection<AbstractDownsampleFieldProducer> producers;
     private final String name;
 
@@ -22,7 +22,7 @@ public class AggregateMetricFieldSerializer implements DownsampleFieldSerializer
      * @param producers a collection of {@link AbstractDownsampleFieldProducer} instances with the subfields
      *                  of the aggregate_metric_double field.
      */
-    public AggregateMetricFieldSerializer(String name, Collection<AbstractDownsampleFieldProducer> producers) {
+    AggregateMetricFieldSerializer(String name, Collection<AbstractDownsampleFieldProducer> producers) {
         this.name = name;
         this.producers = producers;
     }
@@ -39,9 +39,7 @@ public class AggregateMetricFieldSerializer implements DownsampleFieldSerializer
             if (rollupFieldProducer.isEmpty() == false) {
                 if (rollupFieldProducer instanceof MetricFieldProducer metricFieldProducer) {
                     for (MetricFieldProducer.Metric metric : metricFieldProducer.metrics()) {
-                        if (metric.get() != null) {
-                            builder.field(metric.name(), metric.get());
-                        }
+                        metric.toXContent(builder);
                     }
                 } else if (rollupFieldProducer instanceof LabelFieldProducer labelFieldProducer) {
                     LabelFieldProducer.Label label = labelFieldProducer.label();

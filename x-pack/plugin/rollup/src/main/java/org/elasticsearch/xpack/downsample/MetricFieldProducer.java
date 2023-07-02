@@ -7,191 +7,267 @@
 
 package org.elasticsearch.xpack.downsample;
 
-import org.elasticsearch.index.fielddata.FormattedDocValues;
+import org.apache.lucene.index.LeafReaderContext;
+import org.elasticsearch.index.fielddata.SortedNumericDoubleValues;
 import org.elasticsearch.search.aggregations.metrics.CompensatedSum;
 import org.elasticsearch.xcontent.XContentBuilder;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * Class that collects all raw values for a metric field and computes its aggregate (downsampled)
  * values. Based on the supported metric types, the subclasses of this class compute values for
  * gauge and metric types.
  */
-abstract class MetricFieldProducer extends AbstractDownsampleFieldProducer {
+final class MetricFieldProducer extends AbstractDownsampleFieldProducer {
+
+    static MetricFieldProducer gauge(String name, int numSegments) {
+        return new MetricFieldProducer(name, new Metric[] { new Min(), new Max(), new Sum(), new ValueCount() }, numSegments);
+    }
+
+    static MetricFieldProducer gauge(String name, Metric[] metrics, int numSegments) {
+        return new MetricFieldProducer(name, metrics, numSegments);
+    }
+
+    static MetricFieldProducer counter(String name, int numSegments) {
+        return new MetricFieldProducer(name, new LastValue(), numSegments);
+    }
+
+    private final boolean counter;
     /**
      * a list of metrics that will be computed for the field
      */
-    private final List<Metric> metrics;
+    private final Metric[] metrics;
+    private final SortedNumericDoubleValues[] doubleValues;
 
-    MetricFieldProducer(String name, List<Metric> metrics) {
+    private MetricFieldProducer(String name, Metric[] metrics, int numSegments) {
         super(name);
+        this.counter = false;
         this.metrics = metrics;
+        this.doubleValues = new SortedNumericDoubleValues[numSegments];
+    }
+
+    private MetricFieldProducer(String name, LastValue lastValue, int numSegments) {
+        super(name);
+        this.counter = true;
+        this.metrics = new Metric[] { lastValue };
+        this.doubleValues = new SortedNumericDoubleValues[numSegments];
     }
 
     /**
      * Reset all values collected for the field
      */
     public void reset() {
-        metrics().forEach(Metric::reset);
+        for (Metric metric : metrics) {
+            metric.reset();
+        }
         isEmpty = true;
     }
 
     /** return the list of metrics that are computed for the field */
-    public Collection<Metric> metrics() {
+    public Metric[] metrics() {
         return metrics;
     }
 
     /** Collect the value of a raw field and compute all downsampled metrics */
-    void collect(Number value) {
+    void collect(double value) {
         for (MetricFieldProducer.Metric metric : metrics()) {
             metric.collect(value);
         }
         isEmpty = false;
     }
 
-    @Override
-    public void collect(FormattedDocValues docValues, int docId) throws IOException {
+    public void collect(int leafOrd, int docId) throws IOException {
+        // Counter producers only collect the last_value. Since documents are
+        // collected by descending timestamp order, the producer should only
+        // process the first value for every tsid. So, it will only collect the
+        // field if no value has been set before.
+        if (counter && isEmpty == false) {
+            return;
+        }
+
+        SortedNumericDoubleValues docValues = doubleValues[leafOrd];
         if (docValues.advanceExact(docId) == false) {
             return;
         }
         int docValuesCount = docValues.docValueCount();
         for (int i = 0; i < docValuesCount; i++) {
-            Number num = (Number) docValues.nextValue();
+            double num = docValues.nextValue();
             collect(num);
         }
     }
 
-    abstract static class Metric {
-        final String name;
+    public void setLeafReaderContext(LeafReaderContext context, FieldValueFetcher fieldValueFetcher) {
+        doubleValues[context.ord] = fieldValueFetcher.getSortedNumericDoubleValues(context);
+    }
 
-        /**
-         * Abstract class that defines how a metric is computed.
-         * @param name the name of the metric as it will be output in the downsampled document
-         */
-        protected Metric(String name) {
-            this.name = name;
+    @Override
+    public void write(XContentBuilder builder) throws IOException {
+        if (isEmpty() == false) {
+            if (counter) {
+                builder.field(name(), ((LastValue) metrics[0]).lastValue);
+            } else {
+                builder.startObject(name());
+                for (MetricFieldProducer.Metric metric : metrics()) {
+                    metric.toXContent(builder);
+                }
+                builder.endObject();
+            }
         }
+    }
 
-        public String name() {
-            return name;
-        }
+    /**
+     * Abstract class that defines how a metric is computed.
+     */
+    sealed interface Metric permits Max, Min, Sum, LastValue, ValueCount {
 
-        abstract void collect(Number number);
+        void collect(double number);
 
-        abstract Number get();
+        double get();
 
-        abstract void reset();
+        void reset();
+
+        void toXContent(XContentBuilder builder) throws IOException;
     }
 
     /**
      * Metric implementation that computes the maximum of all values of a field
      */
-    static class Max extends Metric {
-        private Double max;
+    static final class Max implements Metric {
+        boolean isSet = false;
+        private double max = Double.NEGATIVE_INFINITY;
 
-        Max() {
-            super("max");
+        Max() {}
+
+        @Override
+        public void collect(double value) {
+            this.isSet = true;
+            this.max = Math.max(value, max);
         }
 
         @Override
-        void collect(Number value) {
-            this.max = max != null ? Math.max(value.doubleValue(), max) : value.doubleValue();
-        }
-
-        @Override
-        Number get() {
+        public double get() {
             return max;
         }
 
         @Override
-        void reset() {
-            max = null;
+        public void reset() {
+            this.max = Double.NEGATIVE_INFINITY;
+            this.isSet = false;
+        }
+
+        public void toXContent(XContentBuilder builder) throws IOException {
+            if (isSet) {
+                builder.field("max", max);
+            }
         }
     }
 
     /**
      * Metric implementation that computes the minimum of all values of a field
      */
-    static class Min extends Metric {
-        private Double min;
+    static final class Min implements Metric {
+        boolean isSet = false;
+        private double min = Double.POSITIVE_INFINITY;
 
-        Min() {
-            super("min");
+        Min() {}
+
+        @Override
+        public void collect(double value) {
+            this.isSet = true;
+            this.min = Math.min(value, min);
         }
 
         @Override
-        void collect(Number value) {
-            this.min = min != null ? Math.min(value.doubleValue(), min) : value.doubleValue();
-        }
-
-        @Override
-        Number get() {
+        public double get() {
             return min;
         }
 
         @Override
-        void reset() {
-            min = null;
+        public void reset() {
+            this.min = Double.POSITIVE_INFINITY;
+            this.isSet = false;
+        }
+
+        public void toXContent(XContentBuilder builder) throws IOException {
+            if (isSet) {
+                builder.field("min", min);
+            }
         }
     }
 
     /**
      * Metric implementation that computes the sum of all values of a field
      */
-    static class Sum extends Metric {
+    static final class Sum implements Metric {
+
+        boolean isSet = false;
+        private final String name;
         private final CompensatedSum kahanSummation = new CompensatedSum();
 
         Sum() {
-            super("sum");
+            name = "sum";
         }
 
         Sum(String name) {
-            super(name);
+            this.name = name;
         }
 
         @Override
-        void collect(Number value) {
-            kahanSummation.add(value.doubleValue());
+        public void collect(double value) {
+            this.isSet = true;
+            kahanSummation.add(value);
         }
 
         @Override
-        Number get() {
+        public double get() {
             return kahanSummation.value();
         }
 
         @Override
-        void reset() {
+        public void reset() {
             kahanSummation.reset(0, 0);
+            this.isSet = false;
+        }
+
+        public void toXContent(XContentBuilder builder) throws IOException {
+            if (isSet) {
+                builder.field(name, kahanSummation.value());
+            }
         }
     }
 
     /**
      * Metric implementation that counts all values collected for a metric field
      */
-    static class ValueCount extends Metric {
+    static final class ValueCount implements Metric {
         private long count;
+        boolean isSet = false;
 
-        ValueCount() {
-            super("value_count");
-        }
+        ValueCount() {}
 
         @Override
-        void collect(Number value) {
+        public void collect(double value) {
+            this.isSet = true;
             count++;
         }
 
         @Override
-        Number get() {
+        public double get() {
             return count;
         }
 
         @Override
-        void reset() {
+        public void reset() {
             count = 0;
+            this.isSet = false;
+        }
+
+        @Override
+        public void toXContent(XContentBuilder builder) throws IOException {
+            if (isSet) {
+                builder.field("value_count", count);
+            }
         }
     }
 
@@ -202,88 +278,37 @@ abstract class MetricFieldProducer extends AbstractDownsampleFieldProducer {
      * the implementation of this class end up storing the first value it is empty and then
      * ignoring everything else.
      */
-    static class LastValue extends Metric {
-        private Number lastValue;
+    static final class LastValue implements Metric {
+        boolean isSet = false;
+        private double lastValue;
 
-        LastValue() {
-            super("last_value");
-        }
+        LastValue() {}
 
         @Override
-        void collect(Number value) {
-            if (lastValue == null) {
+        public void collect(double value) {
+            if (isSet == false) {
                 lastValue = value;
             }
+            this.isSet = true;
         }
 
         @Override
-        Number get() {
+        public double get() {
             return lastValue;
         }
 
         @Override
-        void reset() {
-            lastValue = null;
-        }
-    }
-
-    /**
-     * {@link MetricFieldProducer} implementation for a counter metric field
-     */
-    static class CounterMetricFieldProducer extends MetricFieldProducer {
-
-        CounterMetricFieldProducer(String name) {
-            super(name, Collections.singletonList(new LastValue()));
+        public void reset() {
+            this.lastValue = 0;
+            this.isSet = false;
         }
 
         @Override
-        public void collect(FormattedDocValues docValues, int docId) throws IOException {
-            // Counter producers only collect the last_value. Since documents are
-            // collected by descending timestamp order, the producer should only
-            // process the first value for every tsid. So, it will only collect the
-            // field if no value has been set before.
-            if (isEmpty()) {
-                super.collect(docValues, docId);
-            }
-        }
-
-        public Object value() {
-            assert metrics().size() == 1 : "Single value producers must have only one metric";
-            return metrics().iterator().next().get();
-        }
-
-        @Override
-        public void write(XContentBuilder builder) throws IOException {
-            if (isEmpty() == false) {
-                builder.field(name(), value());
+        public void toXContent(XContentBuilder builder) throws IOException {
+            if (isSet) {
+                builder.field("last_value", lastValue);
             }
         }
     }
 
-    /**
-     * {@link MetricFieldProducer} implementation for a gauge metric field
-     */
-    static class GaugeMetricFieldProducer extends MetricFieldProducer {
-
-        GaugeMetricFieldProducer(String name) {
-            this(name, List.of(new Min(), new Max(), new Sum(), new ValueCount()));
-        }
-
-        GaugeMetricFieldProducer(String name, List<Metric> metrics) {
-            super(name, metrics);
-        }
-
-        @Override
-        public void write(XContentBuilder builder) throws IOException {
-            if (isEmpty() == false) {
-                builder.startObject(name());
-                for (MetricFieldProducer.Metric metric : metrics()) {
-                    if (metric.get() != null) {
-                        builder.field(metric.name(), metric.get());
-                    }
-                }
-                builder.endObject();
-            }
-        }
-    }
 }

@@ -28,7 +28,6 @@ import org.elasticsearch.core.IOUtils;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.index.IndexService;
 import org.elasticsearch.index.engine.Engine;
-import org.elasticsearch.index.fielddata.FormattedDocValues;
 import org.elasticsearch.index.mapper.DateFieldMapper;
 import org.elasticsearch.index.mapper.DocCountFieldMapper;
 import org.elasticsearch.index.mapper.TimeSeriesIdFieldMapper;
@@ -263,10 +262,11 @@ class RollupShardIndexer {
 
             // For each field, return a tuple with the rollup field producer and the field value leaf
             final AbstractDownsampleFieldProducer[] fieldProducers = new AbstractDownsampleFieldProducer[fieldValueFetchers.size()];
-            final FormattedDocValues[] formattedDocValues = new FormattedDocValues[fieldValueFetchers.size()];
             for (int i = 0; i < fieldProducers.length; i++) {
-                fieldProducers[i] = fieldValueFetchers.get(i).rollupFieldProducer();
-                formattedDocValues[i] = fieldValueFetchers.get(i).getLeaf(ctx);
+                var fieldValueFetcher = fieldValueFetchers.get(i);
+                var producer = fieldValueFetcher.rollupFieldProducer();
+                producer.setLeafReaderContext(ctx, fieldValueFetcher);
+                fieldProducers[i] = producer;
             }
 
             return new LeafBucketCollector() {
@@ -335,10 +335,8 @@ class RollupShardIndexer {
                     final int docCount = docCountProvider.getDocCount(docId);
                     rollupBucketBuilder.collectDocCount(docCount);
                     // Iterate over all field values and collect the doc_values for this docId
-                    for (int i = 0; i < fieldProducers.length; i++) {
-                        AbstractDownsampleFieldProducer rollupFieldProducer = fieldProducers[i];
-                        FormattedDocValues docValues = formattedDocValues[i];
-                        rollupFieldProducer.collect(docValues, docId);
+                    for (AbstractDownsampleFieldProducer rollupFieldProducer : fieldProducers) {
+                        rollupFieldProducer.collect(ctx.ord, docId);
                     }
                     docsProcessed++;
                 }

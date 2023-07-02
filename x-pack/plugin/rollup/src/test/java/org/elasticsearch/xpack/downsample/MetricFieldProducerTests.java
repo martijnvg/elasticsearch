@@ -17,37 +17,43 @@ import java.io.IOException;
 public class MetricFieldProducerTests extends AggregatorTestCase {
 
     public void testMinCountMetric() {
-        MetricFieldProducer.Metric metric = new MetricFieldProducer.Min();
-        assertNull(metric.get());
+        var metric = new MetricFieldProducer.Min();
+        assertEquals(metric.isSet, false);
+        assertEquals(metric.get(), Double.POSITIVE_INFINITY, 0d);
         metric.collect(40);
         metric.collect(5.5);
         metric.collect(12.2);
         metric.collect(55);
-        assertEquals(5.5, metric.get());
+        assertEquals(5.5, metric.get(), 0d);
         metric.reset();
-        assertNull(metric.get());
+        assertEquals(metric.isSet, false);
+        assertEquals(metric.get(), Double.POSITIVE_INFINITY, 0d);
     }
 
     public void testMaxCountMetric() {
-        MetricFieldProducer.Metric metric = new MetricFieldProducer.Max();
-        assertNull(metric.get());
+        var metric = new MetricFieldProducer.Max();
+        assertEquals(metric.isSet, false);
+        assertEquals(metric.get(), Double.NEGATIVE_INFINITY, 0d);
         metric.collect(5.5);
         metric.collect(12.2);
         metric.collect(55);
-        assertEquals(55d, metric.get());
+        assertEquals(55d, metric.get(), 0d);
         metric.reset();
-        assertNull(metric.get());
+        assertEquals(metric.isSet, false);
+        assertEquals(metric.get(), Double.NEGATIVE_INFINITY, 0d);
     }
 
     public void testSumCountMetric() {
-        MetricFieldProducer.Metric metric = new MetricFieldProducer.Sum();
-        assertEquals(0d, metric.get());
+        var metric = new MetricFieldProducer.Sum();
+        assertEquals(metric.isSet, false);
+        assertEquals(0d, metric.get(), 0d);
         metric.collect(5.5);
         metric.collect(12.2);
         metric.collect(55);
-        assertEquals(72.7, metric.get());
+        assertEquals(72.7, metric.get(), 0d);
         metric.reset();
-        assertEquals(0d, metric.get());
+        assertEquals(0d, metric.get(), 0d);
+        assertEquals(metric.isSet, false);
     }
 
     /**
@@ -61,7 +67,7 @@ public class MetricFieldProducerTests extends AggregatorTestCase {
         for (int i = 0; i < values.length; i++) {
             metric.collect(values[i]);
         }
-        assertEquals(15.3, metric.get().doubleValue(), Double.MIN_NORMAL);
+        assertEquals(15.3, metric.get(), Double.MIN_NORMAL);
 
         // Summing up an array which contains NaN and infinities and expect a result same as naive summation
         metric.reset();
@@ -74,7 +80,7 @@ public class MetricFieldProducerTests extends AggregatorTestCase {
             sum += d;
             metric.collect(d);
         }
-        assertEquals(sum, metric.get().doubleValue(), 1e-10);
+        assertEquals(sum, metric.get(), 1e-10);
 
         // Summing up some big double values and expect infinity result
         metric.reset();
@@ -82,48 +88,52 @@ public class MetricFieldProducerTests extends AggregatorTestCase {
         for (int i = 0; i < n; i++) {
             metric.collect(Double.MAX_VALUE);
         }
-        assertEquals(Double.POSITIVE_INFINITY, metric.get().doubleValue(), 0d);
+        assertEquals(Double.POSITIVE_INFINITY, metric.get(), 0d);
 
         metric.reset();
         for (int i = 0; i < n; i++) {
             metric.collect(-Double.MAX_VALUE);
         }
-        assertEquals(Double.NEGATIVE_INFINITY, metric.get().doubleValue(), 0d);
+        assertEquals(Double.NEGATIVE_INFINITY, metric.get(), 0d);
     }
 
     public void testValueCountMetric() {
-        MetricFieldProducer.Metric metric = new MetricFieldProducer.ValueCount();
-        assertEquals(0L, metric.get());
+        var metric = new MetricFieldProducer.ValueCount();
+        assertEquals(metric.isSet, false);
+        assertEquals(0L, metric.get(), 0d);
         metric.collect(40);
         metric.collect(30);
         metric.collect(20);
-        assertEquals(3L, metric.get());
+        assertEquals(3L, metric.get(), 0d);
         metric.reset();
-        assertEquals(0L, metric.get());
+        assertEquals(metric.isSet, false);
+        assertEquals(0L, metric.get(), 0d);
     }
 
     public void testLastValueMetric() {
-        MetricFieldProducer.Metric metric = new MetricFieldProducer.LastValue();
-        assertNull(metric.get());
+        var metric = new MetricFieldProducer.LastValue();
+        assertEquals(metric.isSet, false);
+        assertEquals(0.0D, metric.get(), 0d);
         metric.collect(40);
         metric.collect(30);
         metric.collect(20);
-        assertEquals(40, metric.get());
+        assertEquals(40, metric.get(), 0d);
         metric.reset();
-        assertNull(metric.get());
+        assertEquals(metric.isSet, false);
+        assertEquals(0.0D, metric.get(), 0d);
     }
 
     public void testCounterMetricFieldProducer() throws IOException {
         final String field = "field";
-        var producer = new MetricFieldProducer.CounterMetricFieldProducer(field);
+        var producer = MetricFieldProducer.counter(field, 0);
         assertTrue(producer.isEmpty());
         producer.collect(55.0);
         producer.collect(12.2);
         producer.collect(5.5);
 
         assertFalse(producer.isEmpty());
-        Object o = producer.value();
-        assertEquals(55.0, o);
+        double lastValue = producer.metrics()[0].get();
+        assertEquals(55.0, lastValue, 0);
         assertEquals("field", producer.name());
 
         XContentBuilder builder = JsonXContent.contentBuilder().startObject();
@@ -134,7 +144,7 @@ public class MetricFieldProducerTests extends AggregatorTestCase {
 
     public void testGaugeMetricFieldProducer() throws IOException {
         final String field = "field";
-        MetricFieldProducer producer = new MetricFieldProducer.GaugeMetricFieldProducer(field);
+        MetricFieldProducer producer = MetricFieldProducer.gauge(field, 0);
         assertTrue(producer.isEmpty());
         producer.collect(55.0);
         producer.collect(12.2);

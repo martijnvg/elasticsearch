@@ -15,7 +15,7 @@ import java.io.IOException;
 public class LabelFieldProducerTests extends AggregatorTestCase {
 
     public void testLastValueKeywordLabel() {
-        final LabelFieldProducer.Label label = new LabelFieldProducer.LastValueLabel();
+        final LabelFieldProducer.Label label = new LabelFieldProducer.Label();
         label.collect("aaa");
         label.collect("bbb");
         label.collect("ccc");
@@ -25,7 +25,7 @@ public class LabelFieldProducerTests extends AggregatorTestCase {
     }
 
     public void testLastValueDoubleLabel() {
-        final LabelFieldProducer.Label label = new LabelFieldProducer.LastValueLabel();
+        final LabelFieldProducer.Label label = new LabelFieldProducer.Label();
         label.collect(10.20D);
         label.collect(17.30D);
         label.collect(12.60D);
@@ -35,7 +35,7 @@ public class LabelFieldProducerTests extends AggregatorTestCase {
     }
 
     public void testLastValueIntegerLabel() {
-        final LabelFieldProducer.Label label = new LabelFieldProducer.LastValueLabel();
+        final LabelFieldProducer.Label label = new LabelFieldProducer.Label();
         label.collect(10);
         label.collect(17);
         label.collect(12);
@@ -45,7 +45,7 @@ public class LabelFieldProducerTests extends AggregatorTestCase {
     }
 
     public void testLastValueLongLabel() {
-        final LabelFieldProducer.Label label = new LabelFieldProducer.LastValueLabel();
+        final LabelFieldProducer.Label label = new LabelFieldProducer.Label();
         label.collect(10L);
         label.collect(17L);
         label.collect(12L);
@@ -55,7 +55,7 @@ public class LabelFieldProducerTests extends AggregatorTestCase {
     }
 
     public void testLastValueBooleanLabel() {
-        final LabelFieldProducer.Label label = new LabelFieldProducer.LastValueLabel();
+        final LabelFieldProducer.Label label = new LabelFieldProducer.Label();
         label.collect(true);
         label.collect(false);
         label.collect(true);
@@ -65,7 +65,7 @@ public class LabelFieldProducerTests extends AggregatorTestCase {
     }
 
     public void testLabelFieldProducer() throws IOException {
-        final LabelFieldProducer producer = new LabelFieldProducer.LabelLastValueFieldProducer("dummy");
+        final var producer = new LabelFieldProducer("dummy", 1);
         assertTrue(producer.isEmpty());
         assertEquals("dummy", producer.name());
         assertEquals("last_value", producer.label().name());
@@ -85,7 +85,8 @@ public class LabelFieldProducerTests extends AggregatorTestCase {
                 return "aaaa";
             }
         };
-        producer.collect(docValues, 1);
+        producer.formattedDocValues[0] = docValues;
+        producer.collect(0, 1);
         // producer.collect("dummy", "aaaa");
         assertFalse(producer.isEmpty());
         assertEquals("aaaa", producer.label().get());

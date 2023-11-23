@@ -2000,12 +2000,27 @@ public class SearchServiceTests extends ESSingleNodeTestCase {
 
         SearchService service = getInstanceFromNode(SearchService.class);
         {
-            assertEquals(executorPoolSize, service.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.DFS));
-            assertEquals(executorPoolSize, service.determineMaximumNumberOfSlices(threadPoolExecutor, singleSliceReq, ResultsType.DFS));
-            assertEquals(1, service.determineMaximumNumberOfSlices(null, parallelReq, ResultsType.DFS));
-            assertEquals(executorPoolSize, service.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.QUERY));
-            assertEquals(1, service.determineMaximumNumberOfSlices(threadPoolExecutor, singleSliceReq, ResultsType.QUERY));
-            assertEquals(1, service.determineMaximumNumberOfSlices(notThreadPoolExecutor, parallelReq, ResultsType.DFS));
+            assertEquals(
+                executorPoolSize,
+                SearchService.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.DFS, field -> -1L, true)
+            );
+            assertEquals(
+                executorPoolSize,
+                SearchService.determineMaximumNumberOfSlices(threadPoolExecutor, singleSliceReq, ResultsType.DFS, field -> -1L, true)
+            );
+            assertEquals(1, SearchService.determineMaximumNumberOfSlices(null, parallelReq, ResultsType.DFS, field -> -1L, true));
+            assertEquals(
+                executorPoolSize,
+                SearchService.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.QUERY, field -> -1L, true)
+            );
+            assertEquals(
+                1,
+                SearchService.determineMaximumNumberOfSlices(threadPoolExecutor, singleSliceReq, ResultsType.QUERY, field -> -1L, true)
+            );
+            assertEquals(
+                1,
+                SearchService.determineMaximumNumberOfSlices(notThreadPoolExecutor, parallelReq, ResultsType.DFS, field -> -1L, true)
+            );
         }
         try {
             ClusterUpdateSettingsResponse response = client().admin()
@@ -2015,11 +2030,20 @@ public class SearchServiceTests extends ESSingleNodeTestCase {
                 .get();
             assertTrue(response.isAcknowledged());
             {
-                assertEquals(executorPoolSize, service.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.DFS));
-                assertEquals(1, service.determineMaximumNumberOfSlices(null, parallelReq, ResultsType.DFS));
-                assertEquals(1, service.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.QUERY));
-                assertEquals(1, service.determineMaximumNumberOfSlices(null, parallelReq, ResultsType.QUERY));
-                assertEquals(1, service.determineMaximumNumberOfSlices(notThreadPoolExecutor, parallelReq, ResultsType.DFS));
+                assertEquals(
+                    executorPoolSize,
+                    SearchService.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.DFS, field -> -1L, false)
+                );
+                assertEquals(1, SearchService.determineMaximumNumberOfSlices(null, parallelReq, ResultsType.DFS, field -> 0L, false));
+                assertEquals(
+                    1,
+                    SearchService.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.QUERY, field -> -1L, false)
+                );
+                assertEquals(1, SearchService.determineMaximumNumberOfSlices(null, parallelReq, ResultsType.QUERY, field -> 0L, false));
+                assertEquals(
+                    1,
+                    SearchService.determineMaximumNumberOfSlices(notThreadPoolExecutor, parallelReq, ResultsType.DFS, field -> -1L, false)
+                );
             }
         } finally {
             // reset original default setting
@@ -2029,8 +2053,14 @@ public class SearchServiceTests extends ESSingleNodeTestCase {
                 .setPersistentSettings(Settings.builder().putNull(QUERY_PHASE_PARALLEL_COLLECTION_ENABLED.getKey()).build())
                 .get();
             {
-                assertEquals(executorPoolSize, service.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.DFS));
-                assertEquals(executorPoolSize, service.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.QUERY));
+                assertEquals(
+                    executorPoolSize,
+                    SearchService.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.DFS, field -> -1L, true)
+                );
+                assertEquals(
+                    executorPoolSize,
+                    SearchService.determineMaximumNumberOfSlices(threadPoolExecutor, parallelReq, ResultsType.QUERY, field -> -1L, true)
+                );
             }
         }
     }
@@ -2229,37 +2259,52 @@ public class SearchServiceTests extends ESSingleNodeTestCase {
             switch (resultsType) {
                 case NONE, FETCH -> assertFalse(
                     "NONE and FETCH phases do not support parallel collection.",
-                    SearchService.isParallelCollectionSupportedForResults(resultsType, searchSourceBuilderOrNull, randomBoolean())
+                    SearchService.isParallelCollectionSupportedForResults(
+                        resultsType,
+                        searchSourceBuilderOrNull,
+                        randomBoolean(),
+                        field -> 0L
+                    )
                 );
                 case DFS -> assertTrue(
                     "DFS phase always supports parallel collection.",
-                    SearchService.isParallelCollectionSupportedForResults(resultsType, searchSourceBuilderOrNull, randomBoolean())
+                    SearchService.isParallelCollectionSupportedForResults(
+                        resultsType,
+                        searchSourceBuilderOrNull,
+                        randomBoolean(),
+                        field -> 0L
+                    )
                 );
                 case QUERY -> {
                     SearchSourceBuilder searchSourceBuilderNoAgg = new SearchSourceBuilder();
                     assertTrue(
                         "Parallel collection should be supported for the query phase when no agg is present.",
-                        SearchService.isParallelCollectionSupportedForResults(resultsType, searchSourceBuilderNoAgg, true)
+                        SearchService.isParallelCollectionSupportedForResults(resultsType, searchSourceBuilderNoAgg, true, field -> 0L)
                     );
                     assertTrue(
                         "Parallel collection should be supported for the query phase when the source is null.",
-                        SearchService.isParallelCollectionSupportedForResults(resultsType, null, true)
+                        SearchService.isParallelCollectionSupportedForResults(resultsType, null, true, field -> 0L)
                     );
 
                     SearchSourceBuilder searchSourceAggSupportsParallelCollection = new SearchSourceBuilder();
                     searchSourceAggSupportsParallelCollection.aggregation(new DateRangeAggregationBuilder("dateRange"));
                     assertTrue(
                         "Parallel collection should be supported for the query phase when when enabled && contains supported agg.",
-                        SearchService.isParallelCollectionSupportedForResults(resultsType, searchSourceAggSupportsParallelCollection, true)
+                        SearchService.isParallelCollectionSupportedForResults(
+                            resultsType,
+                            searchSourceAggSupportsParallelCollection,
+                            true,
+                            field -> 0L
+                        )
                     );
 
                     assertFalse(
                         "Parallel collection should not be supported for the query phase when disabled.",
-                        SearchService.isParallelCollectionSupportedForResults(resultsType, searchSourceBuilderNoAgg, false)
+                        SearchService.isParallelCollectionSupportedForResults(resultsType, searchSourceBuilderNoAgg, false, field -> 0L)
                     );
                     assertFalse(
                         "Parallel collection should not be supported for the query phase when disabled and source is null.",
-                        SearchService.isParallelCollectionSupportedForResults(resultsType, null, false)
+                        SearchService.isParallelCollectionSupportedForResults(resultsType, null, false, field -> 0L)
                     );
 
                     SearchSourceBuilder searchSourceAggDoesNotSupportParallelCollection = new SearchSourceBuilder();
@@ -2270,7 +2315,8 @@ public class SearchServiceTests extends ESSingleNodeTestCase {
                         SearchService.isParallelCollectionSupportedForResults(
                             resultsType,
                             searchSourceAggDoesNotSupportParallelCollection,
-                            true
+                            true,
+                            field -> -1L
                         )
                     );
 
@@ -2282,7 +2328,8 @@ public class SearchServiceTests extends ESSingleNodeTestCase {
                         SearchService.isParallelCollectionSupportedForResults(
                             resultsType,
                             searchSourceMultiAggDoesNotSupportParallelCollection,
-                            true
+                            true,
+                            field -> -1L
                         )
                     );
                 }

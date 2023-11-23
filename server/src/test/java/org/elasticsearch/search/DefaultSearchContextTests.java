@@ -148,8 +148,7 @@ public class DefaultSearchContextTests extends ESTestCase {
                 false,
                 null,
                 randomInt(),
-                randomInt()
-            );
+                true, null);
             contextWithoutScroll.from(300);
             contextWithoutScroll.close();
 
@@ -189,8 +188,7 @@ public class DefaultSearchContextTests extends ESTestCase {
                     false,
                     null,
                     randomInt(),
-                    randomInt()
-                )
+                    true, null)
             ) {
                 context1.from(300);
                 exception = expectThrows(IllegalArgumentException.class, context1::preProcess);
@@ -267,8 +265,7 @@ public class DefaultSearchContextTests extends ESTestCase {
                     false,
                     null,
                     randomInt(),
-                    randomInt()
-                )
+                    true, null)
             ) {
 
                 SliceBuilder sliceBuilder = mock(SliceBuilder.class);
@@ -308,8 +305,7 @@ public class DefaultSearchContextTests extends ESTestCase {
                     false,
                     null,
                     randomInt(),
-                    randomInt()
-                )
+                    true, null)
             ) {
                 context3.sliceBuilder(null).parsedQuery(parsedQuery).preProcess();
                 assertEquals(context3.query(), context3.buildFilteredQuery(parsedQuery.query()));
@@ -338,8 +334,7 @@ public class DefaultSearchContextTests extends ESTestCase {
                     false,
                     null,
                     randomInt(),
-                    randomInt()
-                )
+                    true, null)
             ) {
                 context4.sliceBuilder(new SliceBuilder(1, 2)).parsedQuery(parsedQuery).preProcess();
                 Query query1 = context4.query();
@@ -408,8 +403,7 @@ public class DefaultSearchContextTests extends ESTestCase {
                 false,
                 null,
                 randomInt(),
-                randomInt()
-            );
+                true, null);
 
             assertThat(context.searcher().hasCancellations(), is(false));
             context.searcher().addQueryCancellation(() -> {});
@@ -522,8 +516,7 @@ public class DefaultSearchContextTests extends ESTestCase {
                 false,
                 null,
                 randomInt(),
-                randomInt()
-            );
+                true, null);
         }
     }
 

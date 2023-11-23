@@ -320,33 +320,33 @@ public class AggregatorFactoriesTests extends ESTestCase {
     public void testSupportsParallelCollection() {
         {
             AggregatorFactories.Builder builder = new AggregatorFactories.Builder();
-            assertTrue(builder.supportsParallelCollection());
+            assertTrue(builder.supportsParallelCollection(field -> -1L));
             builder.addAggregator(new FilterAggregationBuilder("name", new MatchAllQueryBuilder()));
-            assertTrue(builder.supportsParallelCollection());
+            assertTrue(builder.supportsParallelCollection(field -> -1L));
             builder.addAggregator(new TermsAggregationBuilder("terms"));
-            assertFalse(builder.supportsParallelCollection());
+            assertFalse(builder.supportsParallelCollection(field -> -1L));
         }
         {
             AggregatorFactories.Builder builder = new AggregatorFactories.Builder();
             builder.addAggregator(new TermsAggregationBuilder("terms"));
-            assertFalse(builder.supportsParallelCollection());
+            assertFalse(builder.supportsParallelCollection(field -> -1L));
         }
         {
             AggregatorFactories.Builder builder = new AggregatorFactories.Builder();
             builder.addAggregator(new CardinalityAggregationBuilder("cardinality"));
-            assertTrue(builder.supportsParallelCollection());
+            assertTrue(builder.supportsParallelCollection(field -> -1L));
         }
         {
             AggregatorFactories.Builder builder = new AggregatorFactories.Builder();
             builder.addAggregator(new NestedAggregationBuilder("nested", "path"));
-            assertTrue(builder.supportsParallelCollection());
+            assertTrue(builder.supportsParallelCollection(field -> -1L));
         }
         {
             AggregatorFactories.Builder builder = new AggregatorFactories.Builder();
             builder.addAggregator(
                 new CompositeAggregationBuilder("composite", Collections.singletonList(new TermsValuesSourceBuilder("name")))
             );
-            assertTrue(builder.supportsParallelCollection());
+            assertTrue(builder.supportsParallelCollection(field -> -1L));
         }
         {
             AggregatorFactories.Builder builder = new AggregatorFactories.Builder();
@@ -356,7 +356,7 @@ public class AggregatorFactoriesTests extends ESTestCase {
                     return true;
                 }
             });
-            assertFalse(builder.supportsParallelCollection());
+            assertFalse(builder.supportsParallelCollection(field -> -1L));
         }
     }
 

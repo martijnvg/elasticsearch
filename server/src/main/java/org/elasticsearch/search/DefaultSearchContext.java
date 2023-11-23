@@ -8,6 +8,8 @@
 
 package org.elasticsearch.search;
 
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.OrdinalMap;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BoostQuery;
@@ -27,7 +29,11 @@ import org.elasticsearch.index.IndexService;
 import org.elasticsearch.index.IndexSettings;
 import org.elasticsearch.index.cache.bitset.BitsetFilterCache;
 import org.elasticsearch.index.engine.Engine;
+import org.elasticsearch.index.fielddata.FieldDataContext;
+import org.elasticsearch.index.fielddata.IndexFieldDataService;
+import org.elasticsearch.index.fielddata.IndexOrdinalsFieldData;
 import org.elasticsearch.index.mapper.IdLoader;
+import org.elasticsearch.index.mapper.MappingLookup;
 import org.elasticsearch.index.mapper.NestedLookup;
 import org.elasticsearch.index.mapper.SourceLoader;
 import org.elasticsearch.index.query.AbstractQueryBuilder;
@@ -67,8 +73,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.function.LongSupplier;
+import java.util.function.ToLongFunction;
 
 final class DefaultSearchContext extends SearchContext {
 
@@ -141,9 +148,10 @@ final class DefaultSearchContext extends SearchContext {
         TimeValue timeout,
         FetchPhase fetchPhase,
         boolean lowLevelCancellation,
-        Executor executor,
-        int maximumNumberOfSlices,
-        int minimumDocsPerSlice
+        ExecutorService executor,
+        int minimumDocsPerSlice,
+        boolean enableQueryPhaseParallelCollection,
+        SearchService.ResultsType resultsType
     ) throws IOException {
         this.readerContext = readerContext;
         this.request = request;
@@ -165,6 +173,36 @@ final class DefaultSearchContext extends SearchContext {
                     lowLevelCancellation
                 );
             } else {
+                MappingLookup mappingLookup = readerContext.indexService().mapperService().mappingLookup();
+                IndexFieldDataService indexFieldData = readerContext.indexService().getIndexFieldData();
+                ToLongFunction<String> valueCountProvider = field -> {
+                    var mappedFieldType = mappingLookup.getFieldType(field);
+                    if (mappedFieldType.hasDocValues() == false) {
+                        return -1L;
+                    }
+                    var fd = indexFieldData.getForField(mappedFieldType, FieldDataContext.noRuntimeFields("determine parallel execution"));
+                    if (fd instanceof IndexOrdinalsFieldData ordinals) {
+                        // Some field types like flattened don't have an ordinal maps:
+                        if (ordinals.supportsGlobalOrdinalsMapping()) {
+                            DirectoryReader directoryReader = (DirectoryReader) engineSearcher.getIndexReader();
+                            OrdinalMap ordinalMap = ordinals.loadGlobal(directoryReader).getOrdinalMap();
+                            if (ordinalMap != null) {
+                                return ordinalMap.getValueCount();
+                            } else {
+                                // In case of single segment or constant values.
+                                return ordinals.load(directoryReader.leaves().get(0)).getOrdinalsValues().getValueCount();
+                            }
+                        }
+                    }
+                    return -1L;
+                };
+                int maximumNumberOfSlices = SearchService.determineMaximumNumberOfSlices(
+                    executor,
+                    request,
+                    resultsType,
+                    valueCountProvider,
+                    enableQueryPhaseParallelCollection
+                );
                 this.searcher = new ContextIndexSearcher(
                     engineSearcher.getIndexReader(),
                     engineSearcher.getSimilarity(),

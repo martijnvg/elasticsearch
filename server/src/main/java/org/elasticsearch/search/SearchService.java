@@ -141,6 +141,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
+import java.util.function.ToLongFunction;
 
 import static org.elasticsearch.core.TimeValue.timeValueHours;
 import static org.elasticsearch.core.TimeValue.timeValueMillis;
@@ -1079,7 +1080,6 @@ public class SearchService extends AbstractLifecycleComponent implements IndexEv
                 request.getClusterAlias()
             );
             ExecutorService executor = this.enableSearchWorkerThreads ? threadPool.executor(Names.SEARCH_WORKER) : null;
-            int maximumNumberOfSlices = determineMaximumNumberOfSlices(executor, request, resultsType);
             searchContext = new DefaultSearchContext(
                 reader,
                 request,
@@ -1089,8 +1089,9 @@ public class SearchService extends AbstractLifecycleComponent implements IndexEv
                 fetchPhase,
                 lowLevelCancellation,
                 executor,
-                maximumNumberOfSlices,
-                minimumDocsPerSlice
+                minimumDocsPerSlice,
+                enableQueryPhaseParallelCollection,
+                resultsType
             );
             // we clone the query shard context here just for rewriting otherwise we
             // might end up with incorrect state since we are using now() or script services
@@ -1110,23 +1111,35 @@ public class SearchService extends AbstractLifecycleComponent implements IndexEv
         return searchContext;
     }
 
-    int determineMaximumNumberOfSlices(ExecutorService executor, ShardSearchRequest request, ResultsType resultsType) {
+    // Needs to be moved
+    static int determineMaximumNumberOfSlices(
+        ExecutorService executor,
+        ShardSearchRequest request,
+        ResultsType resultsType,
+        ToLongFunction<String> valueCountProvider,
+        boolean enableQueryPhaseParallelCollection
+    ) {
         return executor instanceof ThreadPoolExecutor tpe
-            && isParallelCollectionSupportedForResults(resultsType, request.source(), this.enableQueryPhaseParallelCollection)
-                ? tpe.getMaximumPoolSize()
-                : 1;
+            && isParallelCollectionSupportedForResults(
+                resultsType,
+                request.source(),
+                enableQueryPhaseParallelCollection,
+                valueCountProvider
+            ) ? tpe.getMaximumPoolSize() : 1;
     }
 
+    // Needs to be moved
     static boolean isParallelCollectionSupportedForResults(
         ResultsType resultsType,
         SearchSourceBuilder source,
-        boolean isQueryPhaseParallelismEnabled
+        boolean isQueryPhaseParallelismEnabled,
+        ToLongFunction<String> valueCountProvider
     ) {
         if (resultsType == ResultsType.DFS) {
             return true;
         }
         if (resultsType == ResultsType.QUERY && isQueryPhaseParallelismEnabled) {
-            return source == null || source.supportsParallelCollection();
+            return source == null || source.supportsParallelCollection(valueCountProvider);
         }
         return false;
     }

@@ -902,78 +902,78 @@ public class SearchSourceBuilderTests extends AbstractSearchTestCase {
         {
             SearchSourceBuilder searchSourceBuilder = newSearchSourceBuilder.get();
             if (searchSourceBuilder.aggregations() == null) {
-                assertTrue(searchSourceBuilder.supportsParallelCollection());
+                assertTrue(searchSourceBuilder.supportsParallelCollection(field -> -1L));
             } else {
                 assertEquals(
-                    searchSourceBuilder.aggregations().supportsParallelCollection(),
-                    searchSourceBuilder.supportsParallelCollection()
+                    searchSourceBuilder.aggregations().supportsParallelCollection(field -> -1L),
+                    searchSourceBuilder.supportsParallelCollection(field -> -1L)
                 );
             }
         }
         {
             SearchSourceBuilder searchSourceBuilder = newSearchSourceBuilder.get();
             searchSourceBuilder.aggregation(new MaxAggregationBuilder("max"));
-            assertTrue(searchSourceBuilder.supportsParallelCollection());
+            assertTrue(searchSourceBuilder.supportsParallelCollection(field -> -1L));
 
         }
         {
             SearchSourceBuilder searchSourceBuilder = newSearchSourceBuilder.get();
             searchSourceBuilder.aggregation(new TermsAggregationBuilder("terms"));
-            assertFalse(searchSourceBuilder.supportsParallelCollection());
+            assertFalse(searchSourceBuilder.supportsParallelCollection(field -> -1L));
         }
         {
             SearchSourceBuilder searchSourceBuilder = newSearchSourceBuilder.get();
             searchSourceBuilder.collapse(CollapseBuilderTests.randomCollapseBuilder());
-            assertFalse(searchSourceBuilder.supportsParallelCollection());
+            assertFalse(searchSourceBuilder.supportsParallelCollection(field -> -1L));
         }
         {
             SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().collapse(CollapseBuilderTests.randomCollapseBuilder());
-            assertFalse(searchSourceBuilder.supportsParallelCollection());
+            assertFalse(searchSourceBuilder.supportsParallelCollection(field -> -1L));
         }
         {
             SearchSourceBuilder searchSourceBuilder = newSearchSourceBuilder.get();
             searchSourceBuilder.sort(SortBuilders.scoreSort().order(randomFrom(SortOrder.values())));
-            assertTrue(searchSourceBuilder.supportsParallelCollection());
+            assertTrue(searchSourceBuilder.supportsParallelCollection(field -> -1L));
             searchSourceBuilder.sort(
                 SortBuilders.scriptSort(
                     new Script(ScriptType.INLINE, Script.DEFAULT_SCRIPT_LANG, "foo", emptyMap()),
                     ScriptSortBuilder.ScriptSortType.NUMBER
                 ).order(randomFrom(SortOrder.values()))
             );
-            assertFalse(searchSourceBuilder.supportsParallelCollection());
+            assertFalse(searchSourceBuilder.supportsParallelCollection(field -> -1L));
         }
         {
             SearchSourceBuilder searchSourceBuilder = newSearchSourceBuilder.get();
             searchSourceBuilder.sort(SortBuilders.scoreSort().order(randomFrom(SortOrder.values())));
-            assertTrue(searchSourceBuilder.supportsParallelCollection());
+            assertTrue(searchSourceBuilder.supportsParallelCollection(field -> -1L));
             searchSourceBuilder.sort(SortBuilders.fieldSort("field"));
-            assertFalse(searchSourceBuilder.supportsParallelCollection());
+            assertFalse(searchSourceBuilder.supportsParallelCollection(field -> -1L));
         }
         {
             SearchSourceBuilder searchSourceBuilder = newSearchSourceBuilder.get();
             searchSourceBuilder.sort(SortBuilders.scoreSort().order(randomFrom(SortOrder.values())));
-            assertTrue(searchSourceBuilder.supportsParallelCollection());
+            assertTrue(searchSourceBuilder.supportsParallelCollection(field -> -1L));
             searchSourceBuilder.sort(SortBuilders.geoDistanceSort("field", 0, 0));
-            assertFalse(searchSourceBuilder.supportsParallelCollection());
+            assertFalse(searchSourceBuilder.supportsParallelCollection(field -> -1L));
         }
         {
             SearchSourceBuilder searchSourceBuilder = newSearchSourceBuilder.get();
             searchSourceBuilder.sort(SortBuilders.scoreSort().order(randomFrom(SortOrder.values())));
-            assertTrue(searchSourceBuilder.supportsParallelCollection());
+            assertTrue(searchSourceBuilder.supportsParallelCollection(field -> -1L));
             searchSourceBuilder.sort(SortBuilders.pitTiebreaker());
-            assertFalse(searchSourceBuilder.supportsParallelCollection());
+            assertFalse(searchSourceBuilder.supportsParallelCollection(field -> -1L));
         }
         {
             SearchSourceBuilder searchSourceBuilder = newSearchSourceBuilder.get();
             searchSourceBuilder.sort(SortBuilders.scoreSort().order(randomFrom(SortOrder.values())));
-            assertTrue(searchSourceBuilder.supportsParallelCollection());
+            assertTrue(searchSourceBuilder.supportsParallelCollection(field -> -1L));
             searchSourceBuilder.sort(SortBuilders.fieldSort(FieldSortBuilder.DOC_FIELD_NAME));
-            assertFalse(searchSourceBuilder.supportsParallelCollection());
+            assertFalse(searchSourceBuilder.supportsParallelCollection(field -> -1L));
         }
         {
             SearchSourceBuilder searchSourceBuilder = newSearchSourceBuilder.get();
             searchSourceBuilder.profile(true);
-            assertFalse(searchSourceBuilder.supportsParallelCollection());
+            assertFalse(searchSourceBuilder.supportsParallelCollection(field -> -1L));
         }
     }
 

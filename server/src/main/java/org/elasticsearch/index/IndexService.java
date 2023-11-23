@@ -1269,6 +1269,10 @@ public class IndexService extends AbstractIndexComponent implements IndicesClust
         return clearedAtLeastOne;
     }
 
+    public IndexFieldDataService getIndexFieldData() {
+        return indexFieldData;
+    }
+
     public static Map<String, MappedFieldType> parseRuntimeMappings(
         Map<String, Object> runtimeMappings,
         MapperService mapperService,

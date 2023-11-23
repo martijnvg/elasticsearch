@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.ToLongFunction;
 
 public class TermsAggregationBuilder extends ValuesSourceAggregationBuilder<TermsAggregationBuilder> {
     public static final String NAME = "terms";
@@ -135,8 +136,14 @@ public class TermsAggregationBuilder extends ValuesSourceAggregationBuilder<Term
     }
 
     @Override
-    public boolean supportsParallelCollection() {
-        return false;
+    public boolean supportsParallelCollection(ToLongFunction<String> valueCountProvider) {
+        long valueCount = valueCountProvider.applyAsLong(field());
+        if (valueCount == -1) {
+            return false;
+        }
+
+        int requestedSize = Math.max(bucketCountThresholds.getShardSize(), bucketCountThresholds.getRequiredSize());
+        return valueCount <= requestedSize;
     }
 
     @Override

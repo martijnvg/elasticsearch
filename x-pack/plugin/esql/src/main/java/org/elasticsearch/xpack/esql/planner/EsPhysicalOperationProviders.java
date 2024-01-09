@@ -16,6 +16,7 @@ import org.elasticsearch.compute.lucene.BlockReaderFactories;
 import org.elasticsearch.compute.lucene.LuceneOperator;
 import org.elasticsearch.compute.lucene.LuceneSourceOperator;
 import org.elasticsearch.compute.lucene.LuceneTopNSourceOperator;
+import org.elasticsearch.compute.lucene.TimeSeriesSourceOperator;
 import org.elasticsearch.compute.lucene.ValuesSourceReaderOperator;
 import org.elasticsearch.compute.operator.Operator;
 import org.elasticsearch.compute.operator.OrdinalsGroupingOperator;
@@ -39,9 +40,12 @@ import org.elasticsearch.xpack.esql.type.EsqlDataTypes;
 import org.elasticsearch.xpack.ql.expression.Attribute;
 import org.elasticsearch.xpack.ql.expression.FieldAttribute;
 import org.elasticsearch.xpack.ql.type.DataType;
+import org.elasticsearch.xpack.ql.type.DataTypes;
+import org.elasticsearch.xpack.ql.type.EsField;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 
@@ -143,17 +147,33 @@ public class EsPhysicalOperationProviders extends AbstractPhysicalOperationProvi
                 fieldSorts
             );
         } else {
-            luceneFactory = new LuceneSourceOperator.Factory(
-                searchContexts,
-                querySupplier,
-                context.queryPragmas().dataPartitioning(),
-                context.queryPragmas().taskConcurrency(),
-                context.pageSize(rowEstimatedSize),
-                limit
-            );
+            if (context.queryPragmas().timeSeriesMode()) {
+                luceneFactory = new TimeSeriesSourceOperator.Factory(
+                    searchContexts,
+                    querySupplier,
+                    context.queryPragmas().taskConcurrency(),
+                    context.pageSize(rowEstimatedSize),
+                    limit
+                );
+            } else {
+                luceneFactory = new LuceneSourceOperator.Factory(
+                    searchContexts,
+                    querySupplier,
+                    context.queryPragmas().dataPartitioning(),
+                    context.queryPragmas().taskConcurrency(),
+                    context.pageSize(rowEstimatedSize),
+                    limit
+                );
+            }
         }
         Layout.Builder layout = new Layout.Builder();
         layout.append(esQueryExec.output());
+        if (context.queryPragmas().timeSeriesMode()) {
+            layout.append(new FieldAttribute(esQueryExec.source(), "_tsid", new EsField("_tsid", DataTypes.KEYWORD, Map.of(), true)));
+            layout.append(
+                new FieldAttribute(esQueryExec.source(), "@timestamp", new EsField("@timestamp", DataTypes.DATETIME, Map.of(), true))
+            );
+        }
         int instanceCount = Math.max(1, luceneFactory.taskConcurrency());
         context.driverParallelism(new DriverParallelism(DriverParallelism.Type.DATA_PARALLELISM, instanceCount));
         return PhysicalOperation.fromSource(luceneFactory, layout.build());

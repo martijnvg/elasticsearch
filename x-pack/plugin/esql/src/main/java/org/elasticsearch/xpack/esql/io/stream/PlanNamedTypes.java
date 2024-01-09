@@ -28,6 +28,7 @@ import org.elasticsearch.xpack.esql.expression.function.UnsupportedAttribute;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.Avg;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.Count;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.CountDistinct;
+import org.elasticsearch.xpack.esql.expression.function.aggregate.LastValue;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.Max;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.Median;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.MedianAbsoluteDeviation;
@@ -389,6 +390,7 @@ public final class PlanNamedTypes {
             of(AggregateFunction.class, MedianAbsoluteDeviation.class, PlanNamedTypes::writeAggFunction, PlanNamedTypes::readAggFunction),
             of(AggregateFunction.class, Percentile.class, PlanNamedTypes::writePercentile, PlanNamedTypes::readPercentile),
             of(AggregateFunction.class, Sum.class, PlanNamedTypes::writeAggFunction, PlanNamedTypes::readAggFunction),
+            of(AggregateFunction.class, LastValue.class, PlanNamedTypes::writeAggFunction, PlanNamedTypes::readAggFunction),
             // Multivalue functions
             of(ScalarFunction.class, MvAvg.class, PlanNamedTypes::writeMvFunction, PlanNamedTypes::readMvFunction),
             of(ScalarFunction.class, MvCount.class, PlanNamedTypes::writeMvFunction, PlanNamedTypes::readMvFunction),
@@ -1531,7 +1533,8 @@ public final class PlanNamedTypes {
         entry(name(Min.class), Min::new),
         entry(name(Max.class), Max::new),
         entry(name(Median.class), Median::new),
-        entry(name(MedianAbsoluteDeviation.class), MedianAbsoluteDeviation::new)
+        entry(name(MedianAbsoluteDeviation.class), MedianAbsoluteDeviation::new),
+        entry(name(LastValue.class), LastValue::new)
     );
 
     static AggregateFunction readAggFunction(PlanStreamInput in, String name) throws IOException {

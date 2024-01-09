@@ -14,6 +14,7 @@ import org.elasticsearch.xpack.esql.EsqlIllegalArgumentException;
 import org.elasticsearch.xpack.esql.expression.SurrogateExpression;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.Count;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.CountDistinct;
+import org.elasticsearch.xpack.esql.expression.function.aggregate.LastValue;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.Max;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.Median;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.MedianAbsoluteDeviation;
@@ -57,7 +58,8 @@ public class AggregateMapper {
         MedianAbsoluteDeviation.class,
         Min.class,
         Percentile.class,
-        Sum.class
+        Sum.class,
+        LastValue.class
     );
 
     /** Record of agg Class, type, and grouping (or non-grouping). */

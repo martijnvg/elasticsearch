@@ -124,6 +124,12 @@ public class TimeSeriesIdFieldMapper extends MetadataFieldMapper {
         public Query termQuery(Object value, SearchExecutionContext context) {
             throw new IllegalArgumentException("[" + NAME + "] is not searchable");
         }
+
+        // IGNORE: just to be able to group on _tsid for experimental purposes
+        @Override
+        public BlockLoader blockLoader(BlockLoaderContext blContext) {
+            return new BlockDocValuesReader.BytesRefsFromOrdsBlockLoader(name());
+        }
     }
 
     private TimeSeriesIdFieldMapper() {

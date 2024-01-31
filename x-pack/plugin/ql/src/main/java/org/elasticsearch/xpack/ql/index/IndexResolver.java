@@ -135,7 +135,8 @@ public class IndexResolver {
     );
 
     public static final Set<String> ALL_FIELDS = Set.of("*");
-    public static final Set<String> INDEX_METADATA_FIELD = Set.of("_index");
+    // IGNORE: just to be able to group on _tsid for experimental purposes
+    public static final Set<String> INDEX_METADATA_FIELD = Set.of("_index", "_tsid");
     public static final String UNMAPPED = "unmapped";
 
     private final Client client;
@@ -761,7 +762,8 @@ public class IndexResolver {
                         Fields indexFields = indices.computeIfAbsent(indexName, k -> new Fields());
                         EsField field = indexFields.flattedMapping.get(fieldName);
                         // create field hierarchy or update it in case of an invalid field
-                        if (isMetadataField == false
+                        // IGNORE: just to be able to group on _tsid for experimental purposes
+                        if ((isMetadataField == false || fieldName.equals("_tsid"))
                             && (field == null || (invalidField != null && (field instanceof InvalidMappedField) == false))) {
                             createField(typeRegistry, fieldName, indexFields, fieldCaps, invalidField, typeCap);
 

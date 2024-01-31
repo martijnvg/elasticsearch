@@ -148,6 +148,11 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
             EsIndex esIndex = context.indexResolution().get();
             var attributes = mappingAsAttributes(plan.source(), esIndex.mapping());
             attributes.addAll(plan.metadataFields());
+            if (context.configuration().pragmas().timeSeriesMode()) {
+                // attributes.add(0, new FieldAttribute(plan.source(), "_tsid", new EsField("_tsid", DataTypes.KEYWORD, Map.of(), true)));
+                // attributes.add(1, new FieldAttribute(plan.source(), "@timestamp", new EsField("@timestamp", DataTypes.DATETIME, Map.of(),
+                // true)));
+            }
             return new EsRelation(plan.source(), esIndex, attributes.isEmpty() ? NO_FIELDS : attributes);
         }
 

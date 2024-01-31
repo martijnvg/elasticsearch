@@ -35,6 +35,10 @@ public class AggregateExec extends UnaryExec implements EstimatesRowSize {
         FINAL, // maps intermediate inputs to final outputs
     }
 
+    private final Attribute sourceAttribute;
+    private final Attribute tsidAttribute;
+    private final Attribute timestampAttribute;
+
     public AggregateExec(
         Source source,
         PhysicalPlan child,
@@ -48,6 +52,21 @@ public class AggregateExec extends UnaryExec implements EstimatesRowSize {
         this.aggregates = aggregates;
         this.mode = mode;
         this.estimatedRowSize = estimatedRowSize;
+        sourceAttribute = extractSourceAttributesFrom(child);
+        tsidAttribute = extractTsidAttributesFrom(child);
+        timestampAttribute = extractTimestampAttributesFrom(child);
+    }
+
+    public static Attribute extractSourceAttributesFrom(PhysicalPlan plan) {
+        return plan.outputSet().stream().filter(EsQueryExec::isSourceAttribute).findFirst().orElse(null);
+    }
+
+    public static Attribute extractTsidAttributesFrom(PhysicalPlan plan) {
+        return plan.outputSet().stream().filter(attribute -> "_tsid".equals(attribute.name())).findFirst().orElse(null);
+    }
+
+    public static Attribute extractTimestampAttributesFrom(PhysicalPlan plan) {
+        return plan.outputSet().stream().filter(attribute -> "@timestamp".equals(attribute.name())).findFirst().orElse(null);
     }
 
     @Override
@@ -90,6 +109,18 @@ public class AggregateExec extends UnaryExec implements EstimatesRowSize {
     @Override
     public List<Attribute> output() {
         return Expressions.asAttributes(aggregates);
+    }
+
+    public Attribute getSourceAttribute() {
+        return sourceAttribute;
+    }
+
+    public Attribute getTsidAttribute() {
+        return tsidAttribute;
+    }
+
+    public Attribute getTimestampAttribute() {
+        return timestampAttribute;
     }
 
     @Override

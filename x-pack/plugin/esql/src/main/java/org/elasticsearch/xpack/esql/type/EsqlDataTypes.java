@@ -88,6 +88,8 @@ public final class EsqlDataTypes {
         // ES calls this 'point', but ESQL calls it 'cartesian_point'
         map.put("point", CARTESIAN_POINT);
         map.put("shape", CARTESIAN_SHAPE);
+        // IGNORE: just to be able to group on _tsid for experimental purposes
+        map.put("_tsid", KEYWORD);
         ES_TO_TYPE = Collections.unmodifiableMap(map);
     }
 

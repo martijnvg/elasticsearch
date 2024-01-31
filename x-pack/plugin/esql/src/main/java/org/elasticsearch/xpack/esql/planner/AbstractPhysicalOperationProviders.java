@@ -13,6 +13,7 @@ import org.elasticsearch.compute.aggregation.AggregatorMode;
 import org.elasticsearch.compute.aggregation.GroupingAggregator;
 import org.elasticsearch.compute.data.ElementType;
 import org.elasticsearch.compute.operator.AggregationOperator;
+import org.elasticsearch.compute.operator.TimeSeriesAggregationOperatorFactory;
 import org.elasticsearch.compute.operator.HashAggregationOperator;
 import org.elasticsearch.compute.operator.HashAggregationOperator.HashAggregationOperatorFactory;
 import org.elasticsearch.compute.operator.Operator;
@@ -56,29 +57,53 @@ public abstract class AbstractPhysicalOperationProviders implements PhysicalOper
         var sourceLayout = source.layout;
 
         if (aggregateExec.groupings().isEmpty()) {
-            // not grouping
-            List<Aggregator.Factory> aggregatorFactories = new ArrayList<>();
-
-            // append channels to the layout
-            if (mode == AggregateExec.Mode.FINAL) {
-                layout.append(aggregates);
-            } else {
-                layout.append(aggregateMapper.mapNonGrouping(aggregates));
-            }
-            // create the agg factories
-            aggregatesToFactory(
-                aggregates,
-                mode,
-                sourceLayout,
-                false, // non-grouping
-                s -> aggregatorFactories.add(s.supplier.aggregatorFactory(s.mode))
-            );
-
-            if (aggregatorFactories.isEmpty() == false) {
-                operatorFactory = new AggregationOperator.AggregationOperatorFactory(
+            if (context.queryPragmas().timeSeriesMode()) {
+                List<GroupingAggregator.Factory> aggregatorFactories = new ArrayList<>();
+                // append channels to the layout
+                if (mode == AggregateExec.Mode.FINAL) {
+                    layout.append(aggregates);
+                } else {
+                    layout.append(aggregateMapper.mapGrouping(aggregates));
+                }
+                aggregatesToFactory(
+                    aggregates,
+                    mode,
+                    sourceLayout,
+                    true, // grouping
+                    s -> aggregatorFactories.add(s.supplier.groupingAggregatorFactory(s.mode)),
+                    context.queryPragmas().timeSeriesMode()
+                );
+                operatorFactory = new TimeSeriesAggregationOperatorFactory(
+                    context.queryPragmas().timeSeriesPeriod(),
+                    () -> source.layout.get(aggregateExec.getTsidAttribute().id()).channel(),
+                    () -> source.layout.get(aggregateExec.getTimestampAttribute().id()).channel(),
                     aggregatorFactories,
                     mode == AggregateExec.Mode.FINAL ? AggregatorMode.FINAL : AggregatorMode.INITIAL
                 );
+            } else {
+                // not grouping
+                List<Aggregator.Factory> aggregatorFactories = new ArrayList<>();
+                // append channels to the layout
+                if (mode == AggregateExec.Mode.FINAL) {
+                    layout.append(aggregates);
+                } else {
+                    layout.append(aggregateMapper.mapNonGrouping(aggregates));
+                }
+                // create the agg factories
+                aggregatesToFactory(
+                    aggregates,
+                    mode,
+                    sourceLayout,
+                    false, // non-grouping
+                    s -> aggregatorFactories.add(s.supplier.aggregatorFactory(s.mode)),
+                    context.queryPragmas().timeSeriesMode()
+                );
+                if (aggregatorFactories.isEmpty() == false) {
+                    operatorFactory = new AggregationOperator.AggregationOperatorFactory(
+                        aggregatorFactories,
+                        mode == AggregateExec.Mode.FINAL ? AggregatorMode.FINAL : AggregatorMode.INITIAL
+                    );
+                }
             }
         } else {
             // grouping
@@ -139,7 +164,8 @@ public abstract class AbstractPhysicalOperationProviders implements PhysicalOper
                 mode,
                 sourceLayout,
                 true, // grouping
-                s -> aggregatorFactories.add(s.supplier.groupingAggregatorFactory(s.mode))
+                s -> aggregatorFactories.add(s.supplier.groupingAggregatorFactory(s.mode)),
+                context.queryPragmas().timeSeriesMode()
             );
 
             if (groupSpecs.size() == 1 && groupSpecs.get(0).channel == null) {
@@ -222,7 +248,8 @@ public abstract class AbstractPhysicalOperationProviders implements PhysicalOper
         AggregateExec.Mode mode,
         Layout layout,
         boolean grouping,
-        Consumer<AggFunctionSupplierContext> consumer
+        Consumer<AggFunctionSupplierContext> consumer,
+        boolean timeSeriesMode
     ) {
         for (NamedExpression ne : aggregates) {
             if (ne instanceof Alias alias) {
@@ -257,7 +284,11 @@ public abstract class AbstractPhysicalOperationProviders implements PhysicalOper
                             }
                             sourceAttr = List.of(attr);
                         }
-
+                        if (timeSeriesMode) {
+                            sourceAttr = new ArrayList<>(sourceAttr);
+                            // sourceAttr.add((NamedExpression) new FieldAttribute(Source.EMPTY, "_tsid", new EsField("_tsid",
+                            // DataTypes.KEYWORD, Map.of(), true)));
+                        }
                     } else if (mode == AggregateExec.Mode.FINAL) {
                         aggMode = AggregatorMode.FINAL;
                         if (grouping) {

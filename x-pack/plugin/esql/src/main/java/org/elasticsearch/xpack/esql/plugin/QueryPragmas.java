@@ -20,6 +20,7 @@ import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.threadpool.ThreadPool;
 
 import java.io.IOException;
+import java.sql.Time;
 import java.util.Objects;
 
 /**
@@ -40,6 +41,9 @@ public final class QueryPragmas implements Writeable {
         "data_partitioning",
         DataPartitioning.SEGMENT
     );
+
+    public static final Setting<Boolean> TIME_SERIES_MODE = Setting.boolSetting("time_series", false);
+    public static final Setting<TimeValue> TIME_SERIES_PERIOD = Setting.timeSetting("time_series_period", TimeValue.ZERO);
 
     /**
      * Size of a page in entries with {@code 0} being a special value asking
@@ -126,6 +130,14 @@ public final class QueryPragmas implements Writeable {
 
     public boolean isEmpty() {
         return settings.isEmpty();
+    }
+
+    public boolean timeSeriesMode() {
+        return TIME_SERIES_MODE.get(settings);
+    }
+
+    public TimeValue timeSeriesPeriod() {
+        return TIME_SERIES_PERIOD.get(settings);
     }
 
     @Override

@@ -7,12 +7,20 @@
 
 package org.elasticsearch.compute.lucene;
 
+import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.PointValues;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.PointRangeQuery;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Weight;
+import org.elasticsearch.common.Rounding;
 import org.elasticsearch.core.Nullable;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -44,6 +52,48 @@ public final class LuceneSliceQueue {
 
     public int totalSlices() {
         return totalSlices;
+    }
+
+    public Rounding.Prepared prepareRounding(Rounding rounding) throws IOException {
+        long minTimestamp = 0;
+        long maxTimestamp = Long.MAX_VALUE;
+
+        var rangeQuery = extractRangeQuery(slices.peek().weight().get().getQuery());
+        if (rangeQuery != null) {
+            minTimestamp = LongPoint.decodeDimension(rangeQuery.getLowerPoint(), 0);
+            maxTimestamp = LongPoint.decodeDimension(rangeQuery.getUpperPoint(), 0);
+        }
+
+        for (LuceneSlice slice : slices) {
+            for (PartialLeafReaderContext leaf : slice.leaves()) {
+                PointValues timestampPointValues = leaf.leafReaderContext().reader().getPointValues("@timestamp");
+                long leafMinTimestamp = LongPoint.decodeDimension(timestampPointValues.getMinPackedValue(), 0);
+                minTimestamp = Math.min(minTimestamp, leafMinTimestamp);
+                long leafMaxTimestamp = LongPoint.decodeDimension(timestampPointValues.getMaxPackedValue(), 0);
+                maxTimestamp = Math.max(maxTimestamp, leafMaxTimestamp);
+            }
+        }
+        return rounding.prepare(minTimestamp, maxTimestamp);
+    }
+
+    static PointRangeQuery extractRangeQuery(Query query) {
+        if (query instanceof ConstantScoreQuery constantScoreQuery) {
+            return extractRangeQuery(constantScoreQuery.getQuery());
+        } else if (query instanceof BooleanQuery booleanQuery) {
+            // TODO: deal with more clauses
+            for (var clause : booleanQuery.clauses()) {
+                if (clause.isRequired()) {
+                    return extractRangeQuery(clause.getQuery());
+                }
+            }
+        } else if (query instanceof PointRangeQuery pointRangeQuery) {
+            if (pointRangeQuery.getField().equals("@timestamp")) {
+                return pointRangeQuery;
+            } else {
+                return null;
+            }
+        }
+        return null;
     }
 
     public static LuceneSliceQueue create(

@@ -19,6 +19,7 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleErrorStore;
+import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2;
 import org.elasticsearch.features.FeatureService;
 import org.elasticsearch.features.NodeFeature;
 import org.elasticsearch.health.node.DataStreamLifecycleHealthInfo;
@@ -28,7 +29,7 @@ import org.elasticsearch.health.node.selection.HealthNode;
 
 import java.util.List;
 
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.DATA_STREAM_SIGNALLING_ERROR_RETRY_INTERVAL_SETTING;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.DATA_STREAM_SIGNALLING_ERROR_RETRY_INTERVAL_SETTING;
 
 /**
  * Provides the infrastructure to send errors encountered by indices managed by data stream lifecycle service to the health node.
@@ -86,7 +87,7 @@ public class DataStreamLifecycleHealthInfoPublisher {
 
     /**
      * Publishes the DSL errors that have passed the signaling threshold (as defined by
-     * {@link org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService#DATA_STREAM_SIGNALLING_ERROR_RETRY_INTERVAL_SETTING}
+     * {@link DataStreamLifecycleService2#DATA_STREAM_SIGNALLING_ERROR_RETRY_INTERVAL_SETTING}
      */
     public void publishDslErrorEntries(ActionListener<AcknowledgedResponse> actionListener) {
         if (featureService.clusterHasFeature(clusterService.state(), DSL_HEALTH_INFO_FEATURE) == false) {

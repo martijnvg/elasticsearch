@@ -92,10 +92,10 @@ import java.util.stream.Collectors;
 import static org.elasticsearch.cluster.metadata.DataStreamTestHelper.backingIndexEqualTo;
 import static org.elasticsearch.cluster.metadata.IndexMetadata.APIBlock.READ_ONLY;
 import static org.elasticsearch.cluster.metadata.MetadataIndexTemplateService.DEFAULT_TIMESTAMP_FIELD;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.DATA_STREAM_MERGE_POLICY_TARGET_FACTOR_SETTING;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.DATA_STREAM_MERGE_POLICY_TARGET_FLOOR_SEGMENT_SETTING;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.ONE_HUNDRED_MB;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.TARGET_MERGE_FACTOR_VALUE;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.DATA_STREAM_MERGE_POLICY_TARGET_FACTOR_SETTING;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.DATA_STREAM_MERGE_POLICY_TARGET_FLOOR_SEGMENT_SETTING;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.ONE_HUNDRED_MB;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.TARGET_MERGE_FACTOR_VALUE;
 import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleServiceIT.TestSystemDataStreamPlugin.SYSTEM_DATA_STREAM_NAME;
 import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleServiceIT.TestSystemDataStreamPlugin.SYSTEM_DATA_STREAM_RETENTION_DAYS;
 import static org.elasticsearch.datastreams.lifecycle.health.DataStreamLifecycleHealthIndicatorService.STAGNATING_BACKING_INDICES_DIAGNOSIS_DEF;
@@ -129,10 +129,10 @@ public class DataStreamLifecycleServiceIT extends ESIntegTestCase {
     @Override
     protected Settings nodeSettings(int nodeOrdinal, Settings otherSettings) {
         Settings.Builder settings = Settings.builder().put(super.nodeSettings(nodeOrdinal, otherSettings));
-        settings.put(DataStreamLifecycleService.DATA_STREAM_LIFECYCLE_POLL_INTERVAL, "1s");
+        settings.put(DataStreamLifecycleService2.DATA_STREAM_LIFECYCLE_POLL_INTERVAL, "1s");
         settings.put(DataStreamLifecycle.CLUSTER_LIFECYCLE_DEFAULT_ROLLOVER_SETTING.getKey(), "min_docs=1,max_docs=1");
         // we'll test DSL errors reach the health node, so we're lowering the threshold over which we report errors
-        settings.put(DataStreamLifecycleService.DATA_STREAM_SIGNALLING_ERROR_RETRY_INTERVAL_SETTING.getKey(), "3");
+        settings.put(DataStreamLifecycleService2.DATA_STREAM_SIGNALLING_ERROR_RETRY_INTERVAL_SETTING.getKey(), "3");
         return settings.build();
     }
 
@@ -214,7 +214,7 @@ public class DataStreamLifecycleServiceIT extends ESIntegTestCase {
          * This test makes sure that global data stream retention is ignored by system data streams, and that the configured retention
          * for a system data stream is respected instead.
          */
-        Iterable<DataStreamLifecycleService> dataStreamLifecycleServices = internalCluster().getInstances(DataStreamLifecycleService.class);
+        Iterable<DataStreamLifecycleService2> dataStreamLifecycleServices = internalCluster().getInstances(DataStreamLifecycleService2.class);
         Clock clock = Clock.systemUTC();
         AtomicLong now = new AtomicLong(clock.millis());
         dataStreamLifecycleServices.forEach(dataStreamLifecycleService -> dataStreamLifecycleService.setNowSupplier(now::get));
@@ -488,13 +488,13 @@ public class DataStreamLifecycleServiceIT extends ESIntegTestCase {
                 toBeForceMergedIndex = getBackingIndices(dataStreamName).get(currentGeneration - 2);
             }
             int currentBackingIndexCount = currentGeneration;
-            DataStreamLifecycleService dataStreamLifecycleService = internalCluster().getInstance(
-                DataStreamLifecycleService.class,
+            DataStreamLifecycleService2 dataStreamLifecycleService2 = internalCluster().getInstance(
+                DataStreamLifecycleService2.class,
                 internalCluster().getMasterName()
             );
             ClusterService clusterService = internalCluster().getInstance(ClusterService.class, internalCluster().getMasterName());
             // run data stream lifecycle once
-            dataStreamLifecycleService.run(clusterService.state());
+            dataStreamLifecycleService2.run(clusterService.state());
             assertBusy(() -> {
                 GetDataStreamAction.Request getDataStreamRequest = new GetDataStreamAction.Request(
                     TEST_REQUEST_TIMEOUT,
@@ -532,7 +532,7 @@ public class DataStreamLifecycleServiceIT extends ESIntegTestCase {
     }
 
     private static void disableDataStreamLifecycle() {
-        updateClusterSettings(Settings.builder().put(DataStreamLifecycleService.DATA_STREAM_LIFECYCLE_POLL_INTERVAL, TimeValue.MAX_VALUE));
+        updateClusterSettings(Settings.builder().put(DataStreamLifecycleService2.DATA_STREAM_LIFECYCLE_POLL_INTERVAL, TimeValue.MAX_VALUE));
     }
 
     public void testErrorRecordingOnRollover() throws Exception {
@@ -589,9 +589,9 @@ public class DataStreamLifecycleServiceIT extends ESIntegTestCase {
         String writeIndexName = getBackingIndices(dataStreamName).get(1);
         assertBusy(() -> {
             ErrorEntry writeIndexRolloverError = null;
-            Iterable<DataStreamLifecycleService> lifecycleServices = internalCluster().getInstances(DataStreamLifecycleService.class);
+            Iterable<DataStreamLifecycleService2> lifecycleServices = internalCluster().getInstances(DataStreamLifecycleService2.class);
 
-            for (DataStreamLifecycleService lifecycleService : lifecycleServices) {
+            for (DataStreamLifecycleService2 lifecycleService : lifecycleServices) {
                 writeIndexRolloverError = lifecycleService.getErrorStore().getError(writeIndexName);
                 if (writeIndexRolloverError != null) {
                     break;
@@ -666,9 +666,9 @@ public class DataStreamLifecycleServiceIT extends ESIntegTestCase {
             // we recorded the error against the previous write index (generation 2)
             // let's check there's no error recorded against it anymore
             String previousWriteInddex = backingIndices.get(1);
-            Iterable<DataStreamLifecycleService> lifecycleServices = internalCluster().getInstances(DataStreamLifecycleService.class);
+            Iterable<DataStreamLifecycleService2> lifecycleServices = internalCluster().getInstances(DataStreamLifecycleService2.class);
 
-            for (DataStreamLifecycleService lifecycleService : lifecycleServices) {
+            for (DataStreamLifecycleService2 lifecycleService : lifecycleServices) {
                 assertThat(lifecycleService.getErrorStore().getError(previousWriteInddex), nullValue());
             }
         });
@@ -763,9 +763,9 @@ public class DataStreamLifecycleServiceIT extends ESIntegTestCase {
                 assertThat(writeIndex, backingIndexEqualTo(dataStreamName, 2));
 
                 ErrorEntry recordedRetentionExecutionError = null;
-                Iterable<DataStreamLifecycleService> lifecycleServices = internalCluster().getInstances(DataStreamLifecycleService.class);
+                Iterable<DataStreamLifecycleService2> lifecycleServices = internalCluster().getInstances(DataStreamLifecycleService2.class);
 
-                for (DataStreamLifecycleService lifecycleService : lifecycleServices) {
+                for (DataStreamLifecycleService2 lifecycleService : lifecycleServices) {
                     recordedRetentionExecutionError = lifecycleService.getErrorStore().getError(firstGenerationIndex);
                     if (recordedRetentionExecutionError != null && recordedRetentionExecutionError.retryCount() > 3) {
                         break;
@@ -835,8 +835,8 @@ public class DataStreamLifecycleServiceIT extends ESIntegTestCase {
                 assertThat(backingIndices.size(), equalTo(1));
 
                 // error stores don't contain anything for the first generation index anymore
-                Iterable<DataStreamLifecycleService> lifecycleServices = internalCluster().getInstances(DataStreamLifecycleService.class);
-                for (DataStreamLifecycleService lifecycleService : lifecycleServices) {
+                Iterable<DataStreamLifecycleService2> lifecycleServices = internalCluster().getInstances(DataStreamLifecycleService2.class);
+                for (DataStreamLifecycleService2 lifecycleService : lifecycleServices) {
                     assertThat(lifecycleService.getErrorStore().getError(firstGenerationIndex), nullValue());
                 }
             });

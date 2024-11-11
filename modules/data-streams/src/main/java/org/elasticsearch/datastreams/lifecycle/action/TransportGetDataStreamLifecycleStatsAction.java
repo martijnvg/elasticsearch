@@ -19,7 +19,7 @@ import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
 import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.util.concurrent.EsExecutors;
-import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService;
+import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.injection.guice.Inject;
 import org.elasticsearch.tasks.Task;
@@ -38,7 +38,7 @@ public class TransportGetDataStreamLifecycleStatsAction extends TransportMasterN
     GetDataStreamLifecycleStatsAction.Request,
     GetDataStreamLifecycleStatsAction.Response> {
 
-    private final DataStreamLifecycleService lifecycleService;
+    private final DataStreamLifecycleService2 lifecycleService;
 
     @Inject
     public TransportGetDataStreamLifecycleStatsAction(
@@ -47,7 +47,7 @@ public class TransportGetDataStreamLifecycleStatsAction extends TransportMasterN
         ThreadPool threadPool,
         ActionFilters actionFilters,
         IndexNameExpressionResolver indexNameExpressionResolver,
-        DataStreamLifecycleService lifecycleService
+        DataStreamLifecycleService2 lifecycleService
     ) {
         super(
             GetDataStreamLifecycleStatsAction.NAME,

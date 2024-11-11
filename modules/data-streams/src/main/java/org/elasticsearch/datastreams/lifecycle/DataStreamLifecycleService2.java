@@ -102,9 +102,9 @@ import static org.elasticsearch.datastreams.DataStreamsPlugin.LIFECYCLE_CUSTOM_I
 /**
  * This service will implement the needed actions (e.g. rollover, retention) to manage the data streams with a data stream lifecycle
  * configured. It runs on the master node and it schedules a job according to the configured
- * {@link DataStreamLifecycleService#DATA_STREAM_LIFECYCLE_POLL_INTERVAL_SETTING}.
+ * {@link DataStreamLifecycleService2#DATA_STREAM_LIFECYCLE_POLL_INTERVAL_SETTING}.
  */
-public class DataStreamLifecycleService implements ClusterStateListener, Closeable, SchedulerEngine.Listener {
+public class DataStreamLifecycleService2 implements ClusterStateListener, Closeable, SchedulerEngine.Listener {
 
     public static final String DATA_STREAM_LIFECYCLE_POLL_INTERVAL = "data_streams.lifecycle.poll_interval";
     public static final Setting<TimeValue> DATA_STREAM_LIFECYCLE_POLL_INTERVAL_SETTING = Setting.timeSetting(
@@ -147,7 +147,7 @@ public class DataStreamLifecycleService implements ClusterStateListener, Closeab
 
     public static final String DOWNSAMPLED_INDEX_PREFIX = "downsample-";
 
-    private static final Logger logger = LogManager.getLogger(DataStreamLifecycleService.class);
+    private static final Logger logger = LogManager.getLogger(DataStreamLifecycleService2.class);
     /**
      * Name constant for the job that schedules the data stream lifecycle
      */
@@ -202,7 +202,7 @@ public class DataStreamLifecycleService implements ClusterStateListener, Closeab
             }
         };
 
-    public DataStreamLifecycleService(
+    public DataStreamLifecycleService2(
         Settings settings,
         Client client,
         ClusterService clusterService,

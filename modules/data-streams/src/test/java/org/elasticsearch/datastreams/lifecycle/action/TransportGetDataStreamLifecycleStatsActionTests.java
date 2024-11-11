@@ -23,7 +23,7 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleErrorStore;
-import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService;
+import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexVersion;
 import org.elasticsearch.test.ESTestCase;
@@ -45,7 +45,7 @@ import static org.mockito.Mockito.when;
 
 public class TransportGetDataStreamLifecycleStatsActionTests extends ESTestCase {
 
-    private final DataStreamLifecycleService dataStreamLifecycleService = mock(DataStreamLifecycleService.class);
+    private final DataStreamLifecycleService2 dataStreamLifecycleService2 = mock(DataStreamLifecycleService2.class);
     private final DataStreamLifecycleErrorStore errorStore = mock(DataStreamLifecycleErrorStore.class);
     private final TransportGetDataStreamLifecycleStatsAction action = new TransportGetDataStreamLifecycleStatsAction(
         mock(TransportService.class),
@@ -53,7 +53,7 @@ public class TransportGetDataStreamLifecycleStatsActionTests extends ESTestCase 
         mock(ThreadPool.class),
         mock(ActionFilters.class),
         mock(IndexNameExpressionResolver.class),
-        dataStreamLifecycleService
+            dataStreamLifecycleService2
     );
     private Long lastRunDuration;
     private Long timeBetweenStarts;
@@ -63,9 +63,9 @@ public class TransportGetDataStreamLifecycleStatsActionTests extends ESTestCase 
         super.setUp();
         lastRunDuration = randomBoolean() ? randomLongBetween(0, 100000) : null;
         timeBetweenStarts = randomBoolean() ? randomLongBetween(0, 100000) : null;
-        when(dataStreamLifecycleService.getLastRunDuration()).thenReturn(lastRunDuration);
-        when(dataStreamLifecycleService.getTimeBetweenStarts()).thenReturn(timeBetweenStarts);
-        when(dataStreamLifecycleService.getErrorStore()).thenReturn(errorStore);
+        when(dataStreamLifecycleService2.getLastRunDuration()).thenReturn(lastRunDuration);
+        when(dataStreamLifecycleService2.getTimeBetweenStarts()).thenReturn(timeBetweenStarts);
+        when(dataStreamLifecycleService2.getErrorStore()).thenReturn(errorStore);
         when(errorStore.getAllIndices()).thenReturn(Set.of());
     }
 

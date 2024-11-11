@@ -35,7 +35,7 @@ import org.elasticsearch.core.Nullable;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.datastreams.DataStreamsPlugin;
 import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleErrorStore;
-import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService;
+import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexMode;
 import org.elasticsearch.index.IndexSettings;
@@ -111,7 +111,7 @@ public class DataStreamLifecycleDownsamplingSecurityIT extends SecurityIntegTest
     @Override
     protected Settings nodeSettings(int nodeOrdinal, Settings otherSettings) {
         Settings.Builder settings = Settings.builder().put(super.nodeSettings(nodeOrdinal, otherSettings));
-        settings.put(DataStreamLifecycleService.DATA_STREAM_LIFECYCLE_POLL_INTERVAL, "1s");
+        settings.put(DataStreamLifecycleService2.DATA_STREAM_LIFECYCLE_POLL_INTERVAL, "1s");
         return settings.build();
     }
 
@@ -209,14 +209,14 @@ public class DataStreamLifecycleDownsamplingSecurityIT extends SecurityIntegTest
             }
         });
 
-        DataStreamLifecycleService masterDataStreamLifecycleService = internalCluster().getCurrentMasterNodeInstance(
-            DataStreamLifecycleService.class
+        DataStreamLifecycleService2 masterDataStreamLifecycleService2 = internalCluster().getCurrentMasterNodeInstance(
+            DataStreamLifecycleService2.class
         );
         try {
             // we can't update the index template backing a system data stream, so we run DSL "in the future"
             // this means that only one round of downsampling will execute due to an optimisation we have in DSL to execute the last
             // matching round
-            masterDataStreamLifecycleService.setNowSupplier(() -> Instant.now().plus(50, ChronoUnit.DAYS).toEpochMilli());
+            masterDataStreamLifecycleService2.setNowSupplier(() -> Instant.now().plus(50, ChronoUnit.DAYS).toEpochMilli());
             client().execute(RolloverAction.INSTANCE, new RolloverRequest(dataStreamName, null)).actionGet();
 
             assertBusy(() -> {
@@ -236,14 +236,14 @@ public class DataStreamLifecycleDownsamplingSecurityIT extends SecurityIntegTest
             }, 30, TimeUnit.SECONDS);
         } finally {
             // restore a real nowSupplier so other tests running against this cluster succeed
-            masterDataStreamLifecycleService.setNowSupplier(() -> Instant.now().toEpochMilli());
+            masterDataStreamLifecycleService2.setNowSupplier(() -> Instant.now().toEpochMilli());
         }
     }
 
     private Map<String, String> collectErrorsFromStoreAsMap() {
-        Iterable<DataStreamLifecycleService> lifecycleServices = internalCluster().getInstances(DataStreamLifecycleService.class);
+        Iterable<DataStreamLifecycleService2> lifecycleServices = internalCluster().getInstances(DataStreamLifecycleService2.class);
         Map<String, String> indicesAndErrors = new HashMap<>();
-        for (DataStreamLifecycleService lifecycleService : lifecycleServices) {
+        for (DataStreamLifecycleService2 lifecycleService : lifecycleServices) {
             DataStreamLifecycleErrorStore errorStore = lifecycleService.getErrorStore();
             Set<String> allIndices = errorStore.getAllIndices();
             for (var index : allIndices) {

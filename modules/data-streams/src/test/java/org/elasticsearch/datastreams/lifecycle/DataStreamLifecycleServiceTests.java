@@ -110,13 +110,13 @@ import static org.elasticsearch.cluster.metadata.IndexMetadata.DownsampleTaskSta
 import static org.elasticsearch.cluster.metadata.IndexMetadata.DownsampleTaskStatus.UNKNOWN;
 import static org.elasticsearch.datastreams.DataStreamsPlugin.LIFECYCLE_CUSTOM_INDEX_METADATA_KEY;
 import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleFixtures.createDataStream;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.DATA_STREAM_MERGE_POLICY_TARGET_FACTOR_SETTING;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.DATA_STREAM_MERGE_POLICY_TARGET_FLOOR_SEGMENT_SETTING;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.DATA_STREAM_SIGNALLING_ERROR_RETRY_INTERVAL_SETTING;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.DOWNSAMPLED_INDEX_PREFIX;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.FORCE_MERGE_COMPLETED_TIMESTAMP_METADATA_KEY;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.ONE_HUNDRED_MB;
-import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService.TARGET_MERGE_FACTOR_VALUE;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.DATA_STREAM_MERGE_POLICY_TARGET_FACTOR_SETTING;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.DATA_STREAM_MERGE_POLICY_TARGET_FLOOR_SEGMENT_SETTING;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.DATA_STREAM_SIGNALLING_ERROR_RETRY_INTERVAL_SETTING;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.DOWNSAMPLED_INDEX_PREFIX;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.FORCE_MERGE_COMPLETED_TIMESTAMP_METADATA_KEY;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.ONE_HUNDRED_MB;
+import static org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2.TARGET_MERGE_FACTOR_VALUE;
 import static org.elasticsearch.test.ClusterServiceUtils.createClusterService;
 import static org.elasticsearch.test.ClusterServiceUtils.setState;
 import static org.hamcrest.Matchers.arrayContaining;
@@ -136,7 +136,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
 
     private long now;
     private ThreadPool threadPool;
-    private DataStreamLifecycleService dataStreamLifecycleService;
+    private DataStreamLifecycleService2 dataStreamLifecycleService2;
     private List<TransportRequest> clientSeenRequests;
     private DoExecuteDelegate clientDelegate;
     private ClusterService clusterService;
@@ -148,7 +148,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
     public void setupServices() {
         threadPool = new TestThreadPool(getTestName());
         Set<Setting<?>> builtInClusterSettings = new HashSet<>(ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
-        builtInClusterSettings.add(DataStreamLifecycleService.DATA_STREAM_LIFECYCLE_POLL_INTERVAL_SETTING);
+        builtInClusterSettings.add(DataStreamLifecycleService2.DATA_STREAM_LIFECYCLE_POLL_INTERVAL_SETTING);
         builtInClusterSettings.add(DATA_STREAM_MERGE_POLICY_TARGET_FLOOR_SEGMENT_SETTING);
         builtInClusterSettings.add(DATA_STREAM_MERGE_POLICY_TARGET_FACTOR_SETTING);
         builtInClusterSettings.add(DATA_STREAM_SIGNALLING_ERROR_RETRY_INTERVAL_SETTING);
@@ -173,7 +173,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
             TestShardRoutingRoleStrategies.DEFAULT_ROLE_ONLY
         );
         DataStreamLifecycleErrorStore errorStore = new DataStreamLifecycleErrorStore(() -> now);
-        dataStreamLifecycleService = new DataStreamLifecycleService(
+        dataStreamLifecycleService2 = new DataStreamLifecycleService2(
             Settings.EMPTY,
             client,
             clusterService,
@@ -192,13 +192,13 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
             globalRetentionSettings
         );
         clientDelegate = null;
-        dataStreamLifecycleService.init();
+        dataStreamLifecycleService2.init();
     }
 
     @After
     public void cleanup() {
         clientSeenRequests.clear();
-        dataStreamLifecycleService.close();
+        dataStreamLifecycleService2.close();
         clusterService.close();
         threadPool.shutdownNow();
     }
@@ -220,7 +220,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
 
         ClusterState state = ClusterState.builder(ClusterName.DEFAULT).metadata(builder).build();
 
-        dataStreamLifecycleService.run(state);
+        dataStreamLifecycleService2.run(state);
         assertThat(clientSeenRequests.size(), is(5));
         assertThat(clientSeenRequests.get(0), instanceOf(RolloverRequest.class));
         RolloverRequest rolloverBackingIndexRequest = (RolloverRequest) clientSeenRequests.get(0);
@@ -240,7 +240,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
 
         // on the second run the rollover and delete requests should not execute anymore
         // i.e. the count should *remain* 1 for rollover and 2 for deletes
-        dataStreamLifecycleService.run(state);
+        dataStreamLifecycleService2.run(state);
         assertThat(clientSeenRequests.size(), is(5));
     }
 
@@ -259,7 +259,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         builder.put(dataStream);
 
         ClusterState state = ClusterState.builder(ClusterName.DEFAULT).metadata(builder).build();
-        dataStreamLifecycleService.run(state);
+        dataStreamLifecycleService2.run(state);
         assertThat(clientSeenRequests.size(), is(3));  // rollover the write index, and force merge the other two
         assertThat(clientSeenRequests.get(0), instanceOf(RolloverRequest.class));
     }
@@ -281,7 +281,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         builder.put(dataStream);
 
         ClusterState state = ClusterState.builder(ClusterName.DEFAULT).metadata(builder).build();
-        dataStreamLifecycleService.run(state);
+        dataStreamLifecycleService2.run(state);
         assertThat(clientSeenRequests.size(), is(5)); // roll over the 2 write indices, and force merge the other three
         assertThat(clientSeenRequests.get(0), instanceOf(RolloverRequest.class));
         assertThat(clientSeenRequests.get(1), instanceOf(RolloverRequest.class));
@@ -313,7 +313,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         );
         clusterState = ClusterState.builder(clusterState).metadata(builder).build();
 
-        dataStreamLifecycleService.run(clusterState);
+        dataStreamLifecycleService2.run(clusterState);
         assertThat(clientSeenRequests.size(), is(2)); // rollover the write index and one delete request for the index that's out of the
         // TS time bounds
         assertThat(clientSeenRequests.get(0), instanceOf(RolloverRequest.class));
@@ -350,7 +350,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         );
         clusterState = ClusterState.builder(clusterState).metadata(builder).build();
 
-        dataStreamLifecycleService.run(clusterState);
+        dataStreamLifecycleService2.run(clusterState);
         // There should be two client requests: one rollover, and one to update the merge policy settings. N.B. The merge policy settings
         // will always be updated before the force merge is done, see testMergePolicySettingsAreConfiguredBeforeForcemerge.
         assertThat(clientSeenRequests.size(), is(2));
@@ -409,7 +409,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
             metaBuilder.put(indexMetaBuilder);
             state = ClusterState.builder(ClusterName.DEFAULT).metadata(metaBuilder).build();
 
-            dataStreamLifecycleService.run(state);
+            dataStreamLifecycleService2.run(state);
             assertThat(clientSeenRequests.size(), is(2)); // rollover the write index and delete the second generation
             assertThat(clientSeenRequests.get(0), instanceOf(RolloverRequest.class));
             assertThat(clientSeenRequests.get(1), instanceOf(DeleteIndexRequest.class));
@@ -433,7 +433,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
             metaBuilder.put(indexMetaBuilder);
             state = ClusterState.builder(ClusterName.DEFAULT).metadata(metaBuilder).build();
 
-            dataStreamLifecycleService.run(state);
+            dataStreamLifecycleService2.run(state);
             assertThat(clientSeenRequests.size(), is(3)); // rollover the write index and delete the other two generations
             assertThat(clientSeenRequests.get(0), instanceOf(RolloverRequest.class));
             assertThat(clientSeenRequests.get(1), instanceOf(DeleteIndexRequest.class));
@@ -466,7 +466,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         builder.put(dataStream);
 
         ClusterState state = ClusterState.builder(ClusterName.DEFAULT).metadata(builder).build();
-        dataStreamLifecycleService.run(state);
+        dataStreamLifecycleService2.run(state);
         assertThat(clientSeenRequests.isEmpty(), is(true));
     }
 
@@ -487,7 +487,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         builder.put(dataStream);
 
         ClusterState state = ClusterState.builder(ClusterName.DEFAULT).metadata(builder).build();
-        dataStreamLifecycleService.run(state);
+        dataStreamLifecycleService2.run(state);
         assertThat(clientSeenRequests.isEmpty(), is(true));
     }
 
@@ -512,7 +512,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
 
         // all backing indices are in the error store
         for (Index index : dataStream.getIndices()) {
-            dataStreamLifecycleService.getErrorStore().recordError(index.getName(), new NullPointerException("bad"));
+            dataStreamLifecycleService2.getErrorStore().recordError(index.getName(), new NullPointerException("bad"));
         }
         Index writeIndex = dataStream.getWriteIndex();
         // all indices but the write index are deleted
@@ -531,13 +531,13 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         ClusterState stateWithDeletedIndices = newStateBuilder.nodes(buildNodes(nodeId).masterNodeId(nodeId)).build();
         setState(clusterService, stateWithDeletedIndices);
 
-        dataStreamLifecycleService.run(stateWithDeletedIndices);
+        dataStreamLifecycleService2.run(stateWithDeletedIndices);
 
         for (Index deletedIndex : deletedIndices) {
-            assertThat(dataStreamLifecycleService.getErrorStore().getError(deletedIndex.getName()), nullValue());
+            assertThat(dataStreamLifecycleService2.getErrorStore().getError(deletedIndex.getName()), nullValue());
         }
         // the value for the write index should still be in the error store
-        assertThat(dataStreamLifecycleService.getErrorStore().getError(dataStream.getWriteIndex().getName()), notNullValue());
+        assertThat(dataStreamLifecycleService2.getErrorStore().getError(dataStream.getWriteIndex().getName()), notNullValue());
     }
 
     public void testErrorStoreIsClearedOnBackingIndexBecomingUnmanaged() {
@@ -554,7 +554,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         );
         // all backing indices are in the error store
         for (Index index : dataStream.getIndices()) {
-            dataStreamLifecycleService.getErrorStore().recordError(index.getName(), new NullPointerException("bad"));
+            dataStreamLifecycleService2.getErrorStore().recordError(index.getName(), new NullPointerException("bad"));
         }
         builder.put(dataStream);
         ClusterState state = ClusterState.builder(ClusterName.DEFAULT).metadata(builder).build();
@@ -572,10 +572,10 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         ClusterState updatedState = ClusterState.builder(state).metadata(metaBuilder).build();
         setState(clusterService, updatedState);
 
-        dataStreamLifecycleService.run(updatedState);
+        dataStreamLifecycleService2.run(updatedState);
 
         for (Index index : dataStream.getIndices()) {
-            assertThat(dataStreamLifecycleService.getErrorStore().getError(index.getName()), nullValue());
+            assertThat(dataStreamLifecycleService2.getErrorStore().getError(index.getName()), nullValue());
         }
     }
 
@@ -592,7 +592,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         );
         // all backing indices are in the error store
         for (Index index : ilmManagedDataStream.getIndices()) {
-            dataStreamLifecycleService.getErrorStore().recordError(index.getName(), new NullPointerException("will be ILM managed soon"));
+            dataStreamLifecycleService2.getErrorStore().recordError(index.getName(), new NullPointerException("will be ILM managed soon"));
         }
         String dataStreamWithBackingIndicesInErrorState = randomAlphaOfLength(15).toLowerCase(Locale.ROOT);
         DataStream dslManagedDataStream = createDataStream(
@@ -605,7 +605,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         );
         // put all backing indices in the error store
         for (Index index : dslManagedDataStream.getIndices()) {
-            dataStreamLifecycleService.getErrorStore().recordError(index.getName(), new NullPointerException("dsl managed index"));
+            dataStreamLifecycleService2.getErrorStore().recordError(index.getName(), new NullPointerException("dsl managed index"));
         }
         builder.put(ilmManagedDataStream);
         builder.put(dslManagedDataStream);
@@ -624,13 +624,13 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         ClusterState updatedState = ClusterState.builder(state).metadata(metaBuilder).build();
         setState(clusterService, updatedState);
 
-        dataStreamLifecycleService.run(updatedState);
+        dataStreamLifecycleService2.run(updatedState);
 
         for (Index index : dslManagedDataStream.getIndices()) {
-            assertThat(dataStreamLifecycleService.getErrorStore().getError(index.getName()), notNullValue());
+            assertThat(dataStreamLifecycleService2.getErrorStore().getError(index.getName()), notNullValue());
         }
         for (Index index : ilmManagedDataStream.getIndices()) {
-            assertThat(dataStreamLifecycleService.getErrorStore().getError(index.getName()), nullValue());
+            assertThat(dataStreamLifecycleService2.getErrorStore().getError(index.getName()), nullValue());
         }
     }
 
@@ -662,7 +662,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         nodesBuilder.masterNodeId(nodeId);
         ClusterState state = ClusterState.builder(ClusterName.DEFAULT).metadata(builder).nodes(nodesBuilder).build();
         setState(clusterService, state);
-        dataStreamLifecycleService.run(clusterService.state());
+        dataStreamLifecycleService2.run(clusterService.state());
 
         // There are 3 backing indices. One gets rolled over. The other two get force merged:
         assertBusy(() -> {
@@ -702,7 +702,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         assertThat(forceMergeRequests.get(1).indices()[0], is(dataStream.getIndices().get(1).getName()));
 
         // No changes, so running should not create any more requests
-        dataStreamLifecycleService.run(clusterService.state());
+        dataStreamLifecycleService2.run(clusterService.state());
         assertThat(clientSeenRequests.size(), is(3));
 
         // Add another index backing, and make sure that the only thing that happens is another force merge
@@ -727,7 +727,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         builder.put(dataStream2);
         state = ClusterState.builder(clusterService.state()).metadata(builder).build();
         setState(clusterService, state);
-        dataStreamLifecycleService.run(clusterService.state());
+        dataStreamLifecycleService2.run(clusterService.state());
         assertBusy(() -> { assertThat(clientSeenRequests.size(), is(4)); });
         assertThat(((ForceMergeRequest) clientSeenRequests.get(3)).indices().length, is(1));
         assertBusy(() -> {
@@ -785,7 +785,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
                     forceMergeFailedCount.incrementAndGet();
                 }
             };
-            dataStreamLifecycleService.run(clusterService.state());
+            dataStreamLifecycleService2.run(clusterService.state());
             /*
              * We expect that data stream lifecycle will try to pick it up next time.
              */
@@ -819,7 +819,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
                     forceMergeFailedCount.incrementAndGet();
                 }
             };
-            dataStreamLifecycleService.run(clusterService.state());
+            dataStreamLifecycleService2.run(clusterService.state());
             assertBusy(() -> {
                 assertThat(forceMergeFailedCount.get(), equalTo(2));
                 assertThat(
@@ -844,7 +844,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
                     forceMergeFailedCount.incrementAndGet();
                 }
             };
-            dataStreamLifecycleService.run(clusterService.state());
+            dataStreamLifecycleService2.run(clusterService.state());
             assertBusy(() -> {
                 assertThat(forceMergeFailedCount.get(), equalTo(2));
                 assertThat(
@@ -864,7 +864,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
                     listener.onResponse(new BroadcastResponse(5, 5, 0, List.of()));
                 }
             };
-            dataStreamLifecycleService.run(clusterService.state());
+            dataStreamLifecycleService2.run(clusterService.state());
             /*
              * And this time we expect that it will actually run the forcemerge, and update the marker to complete:
              */
@@ -965,10 +965,10 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
             }
         };
         for (int i = 0; i < 100; i++) {
-            dataStreamLifecycleService.run(clusterService.state());
-            assertThat(dataStreamLifecycleService.transportActionsDeduplicator.size(), lessThanOrEqualTo(1));
+            dataStreamLifecycleService2.run(clusterService.state());
+            assertThat(dataStreamLifecycleService2.transportActionsDeduplicator.size(), lessThanOrEqualTo(1));
         }
-        assertBusy(() -> assertThat(dataStreamLifecycleService.transportActionsDeduplicator.size(), equalTo(0)));
+        assertBusy(() -> assertThat(dataStreamLifecycleService2.transportActionsDeduplicator.size(), equalTo(0)));
     }
 
     public void testUpdateForceMergeCompleteTask() throws Exception {
@@ -988,7 +988,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
             }
         };
         String targetIndex = randomAlphaOfLength(20);
-        DataStreamLifecycleService.UpdateForceMergeCompleteTask task = new DataStreamLifecycleService.UpdateForceMergeCompleteTask(
+        DataStreamLifecycleService2.UpdateForceMergeCompleteTask task = new DataStreamLifecycleService2.UpdateForceMergeCompleteTask(
             listener,
             targetIndex,
             threadPool
@@ -1047,7 +1047,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         // test auto max_age and another concrete condition
         {
             RolloverConditions randomConcreteRolloverConditions = randomRolloverConditions(false);
-            RolloverRequest rolloverRequest = DataStreamLifecycleService.getDefaultRolloverRequest(
+            RolloverRequest rolloverRequest = DataStreamLifecycleService2.getDefaultRolloverRequest(
                 new RolloverConfiguration(randomConcreteRolloverConditions, Set.of("max_age")),
                 "my-data-stream",
                 null,
@@ -1062,7 +1062,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
                         .build()
                 )
             );
-            RolloverRequest rolloverRequestWithRetention = DataStreamLifecycleService.getDefaultRolloverRequest(
+            RolloverRequest rolloverRequestWithRetention = DataStreamLifecycleService2.getDefaultRolloverRequest(
                 new RolloverConfiguration(randomConcreteRolloverConditions, Set.of("max_age")),
                 "my-data-stream",
                 TimeValue.timeValueDays(3),
@@ -1080,7 +1080,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         // test without any automatic conditions
         {
             RolloverConditions randomConcreteRolloverConditions = randomRolloverConditions(true);
-            RolloverRequest rolloverRequest = DataStreamLifecycleService.getDefaultRolloverRequest(
+            RolloverRequest rolloverRequest = DataStreamLifecycleService2.getDefaultRolloverRequest(
                 new RolloverConfiguration(randomConcreteRolloverConditions),
                 "my-data-stream",
                 null,
@@ -1088,7 +1088,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
             );
             assertThat(rolloverRequest.getRolloverTarget(), equalTo("my-data-stream"));
             assertThat(rolloverRequest.getConditions(), equalTo(randomConcreteRolloverConditions));
-            RolloverRequest rolloverRequestWithRetention = DataStreamLifecycleService.getDefaultRolloverRequest(
+            RolloverRequest rolloverRequestWithRetention = DataStreamLifecycleService2.getDefaultRolloverRequest(
                 new RolloverConfiguration(randomConcreteRolloverConditions),
                 "my-data-stream",
                 TimeValue.timeValueDays(1),
@@ -1111,7 +1111,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         originalRequest.onlyExpungeDeletes(randomBoolean());
         originalRequest.flush(randomBoolean());
         EqualsHashCodeTestUtils.checkEqualsAndHashCode(
-            new DataStreamLifecycleService.ForceMergeRequestWrapper(originalRequest),
+            new DataStreamLifecycleService2.ForceMergeRequestWrapper(originalRequest),
             DataStreamLifecycleServiceTests::copyForceMergeRequestWrapperRequest,
             DataStreamLifecycleServiceTests::mutateForceMergeRequestWrapper
         );
@@ -1137,7 +1137,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         nodesBuilder.masterNodeId(nodeId);
         ClusterState state = ClusterState.builder(ClusterName.DEFAULT).metadata(builder).nodes(nodesBuilder).build();
         setState(clusterService, state);
-        dataStreamLifecycleService.run(clusterService.state());
+        dataStreamLifecycleService2.run(clusterService.state());
 
         // There are 3 backing indices. One gets rolled over. The other two will need to have their merge policy updated:
         assertBusy(() -> assertThat(clientSeenRequests.size(), is(3)), 30, TimeUnit.SECONDS);
@@ -1162,7 +1162,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
             );
         }
         // No changes, so running should not create any more requests
-        dataStreamLifecycleService.run(clusterService.state());
+        dataStreamLifecycleService2.run(clusterService.state());
         assertThat(clientSeenRequests.size(), is(3));
 
         // let's add one more backing index that has the expected merge policy and check the data stream lifecycle issues a forcemerge
@@ -1188,7 +1188,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         builder.put(modifiedDataStream);
         state = ClusterState.builder(clusterService.state()).metadata(builder).build();
         setState(clusterService, state);
-        dataStreamLifecycleService.run(clusterService.state());
+        dataStreamLifecycleService2.run(clusterService.state());
         assertBusy(() -> assertThat(clientSeenRequests.size(), is(4)));
         assertThat(((ForceMergeRequest) clientSeenRequests.get(3)).indices().length, is(1));
     }
@@ -1225,7 +1225,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         setState(clusterService, state);
         String firstGenIndexName = DataStream.getDefaultBackingIndexName(dataStreamName, 1);
         Index firstGenIndex = clusterService.state().metadata().index(firstGenIndexName).getIndex();
-        Set<Index> affectedIndices = dataStreamLifecycleService.maybeExecuteDownsampling(
+        Set<Index> affectedIndices = dataStreamLifecycleService2.maybeExecuteDownsampling(
             clusterService.state(),
             dataStream,
             List.of(firstGenIndex)
@@ -1254,7 +1254,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         }
 
         // on the next run downsampling should be triggered
-        affectedIndices = dataStreamLifecycleService.maybeExecuteDownsampling(clusterService.state(), dataStream, List.of(firstGenIndex));
+        affectedIndices = dataStreamLifecycleService2.maybeExecuteDownsampling(clusterService.state(), dataStream, List.of(firstGenIndex));
         assertThat(affectedIndices, is(Set.of(firstGenIndex)));
         assertThat(clientSeenRequests.size(), is(2));
         assertThat(clientSeenRequests.get(1), instanceOf(DownsampleAction.Request.class));
@@ -1285,7 +1285,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         }
 
         // on the next run downsampling nothing should be triggered as downsampling is in progress (i.e. the STATUS is STARTED)
-        affectedIndices = dataStreamLifecycleService.maybeExecuteDownsampling(clusterService.state(), dataStream, List.of(firstGenIndex));
+        affectedIndices = dataStreamLifecycleService2.maybeExecuteDownsampling(clusterService.state(), dataStream, List.of(firstGenIndex));
         assertThat(affectedIndices, is(Set.of(firstGenIndex)));
         // still only 2 witnessed requests, nothing extra
         assertThat(clientSeenRequests.size(), is(2));
@@ -1314,7 +1314,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         // on this run, as downsampling is complete we expect to trigger the {@link
         // org.elasticsearch.datastreams.lifecycle.downsampling.DeleteSourceAndAddDownsampleToDS}
         // cluster service task and delete the source index whilst adding the downsample index in the data stream
-        affectedIndices = dataStreamLifecycleService.maybeExecuteDownsampling(clusterService.state(), dataStream, List.of(firstGenIndex));
+        affectedIndices = dataStreamLifecycleService2.maybeExecuteDownsampling(clusterService.state(), dataStream, List.of(firstGenIndex));
         assertThat(affectedIndices, is(Set.of(firstGenIndex)));
         assertBusy(() -> {
             ClusterState newState = clusterService.state();
@@ -1385,10 +1385,10 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         setState(clusterService, state);
 
         Index firstGenIndex = state.metadata().index(firstGenIndexName).getIndex();
-        dataStreamLifecycleService.maybeExecuteDownsampling(clusterService.state(), dataStream, List.of(firstGenIndex));
+        dataStreamLifecycleService2.maybeExecuteDownsampling(clusterService.state(), dataStream, List.of(firstGenIndex));
 
         assertThat(clientSeenRequests.size(), is(0));
-        ErrorEntry error = dataStreamLifecycleService.getErrorStore().getError(firstGenIndexName);
+        ErrorEntry error = dataStreamLifecycleService2.getErrorStore().getError(firstGenIndexName);
         assertThat(error, notNullValue());
         assertThat(error.error(), containsString("resource_already_exists_exception"));
     }
@@ -1413,7 +1413,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         {
             // test for an index for which `now` is outside its time bounds
             Index firstGenIndex = dataStream.getIndices().get(0);
-            Set<Index> indices = DataStreamLifecycleService.timeSeriesIndicesStillWithinTimeBounds(
+            Set<Index> indices = DataStreamLifecycleService2.timeSeriesIndicesStillWithinTimeBounds(
                 clusterState.metadata(),
                 // the end_time for the first generation has lapsed
                 List.of(firstGenIndex),
@@ -1423,7 +1423,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         }
 
         {
-            Set<Index> indices = DataStreamLifecycleService.timeSeriesIndicesStillWithinTimeBounds(
+            Set<Index> indices = DataStreamLifecycleService2.timeSeriesIndicesStillWithinTimeBounds(
                 clusterState.metadata(),
                 // the end_time for the first generation has lapsed, but the other 2 generations are still within bounds
                 dataStream.getIndices(),
@@ -1441,7 +1441,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
 
             Metadata newMetadata = Metadata.builder(clusterState.metadata()).put(indexMeta, true).build();
 
-            Set<Index> indices = DataStreamLifecycleService.timeSeriesIndicesStillWithinTimeBounds(
+            Set<Index> indices = DataStreamLifecycleService2.timeSeriesIndicesStillWithinTimeBounds(
                 newMetadata,
                 List.of(indexMeta.getIndex()),
                 currentTime::toEpochMilli
@@ -1454,7 +1454,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         AtomicLong now = new AtomicLong(0);
         long delta = randomLongBetween(10, 10000);
         DataStreamLifecycleErrorStore errorStore = new DataStreamLifecycleErrorStore(() -> Clock.systemUTC().millis());
-        DataStreamLifecycleService service = new DataStreamLifecycleService(
+        DataStreamLifecycleService2 service = new DataStreamLifecycleService2(
             Settings.EMPTY,
             getTransportRequestsRecordingClient(),
             clusterService,
@@ -1508,14 +1508,14 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         builder.put(dataStream);
         Metadata metadata = builder.build();
         Set<Index> indicesToExclude = Set.of(dataStream.getIndices().get(0), dataStream.getFailureIndices().getIndices().get(0));
-        List<Index> targetBackingIndicesOnly = DataStreamLifecycleService.getTargetIndices(
+        List<Index> targetBackingIndicesOnly = DataStreamLifecycleService2.getTargetIndices(
             dataStream,
             indicesToExclude,
             metadata::index,
             false
         );
         assertThat(targetBackingIndicesOnly, equalTo(dataStream.getIndices().subList(1, 3)));
-        List<Index> targetIndices = DataStreamLifecycleService.getTargetIndices(dataStream, indicesToExclude, metadata::index, true);
+        List<Index> targetIndices = DataStreamLifecycleService2.getTargetIndices(dataStream, indicesToExclude, metadata::index, true);
         assertThat(
             targetIndices,
             equalTo(
@@ -1541,7 +1541,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
 
         ClusterState state = ClusterState.builder(ClusterName.DEFAULT).metadata(builder).build();
 
-        dataStreamLifecycleService.run(state);
+        dataStreamLifecycleService2.run(state);
         assertThat(clientSeenRequests.size(), is(3));
         assertThat(clientSeenRequests.get(0), instanceOf(RolloverRequest.class));
         RolloverRequest rolloverBackingIndexRequest = (RolloverRequest) clientSeenRequests.get(0);
@@ -1564,7 +1564,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         String firstGenIndexName = DataStream.getDefaultBackingIndexName(dataStreamName, 1);
 
         // Executing the method to be tested:
-        Set<Index> indicesToBeRemoved = dataStreamLifecycleService.maybeExecuteRetention(clusterService.state(), dataStream, Set.of());
+        Set<Index> indicesToBeRemoved = dataStreamLifecycleService2.maybeExecuteRetention(clusterService.state(), dataStream, Set.of());
         assertThat(indicesToBeRemoved, contains(state.getMetadata().index(firstGenIndexName).getIndex()));
     }
 
@@ -1575,7 +1575,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         String firstGenIndexName = DataStream.getDefaultBackingIndexName(dataStreamName, 1);
 
         // Executing the method to be tested:
-        Set<Index> indicesToBeRemoved = dataStreamLifecycleService.maybeExecuteRetention(clusterService.state(), dataStream, Set.of());
+        Set<Index> indicesToBeRemoved = dataStreamLifecycleService2.maybeExecuteRetention(clusterService.state(), dataStream, Set.of());
         assertThat(indicesToBeRemoved, empty());
     }
 
@@ -1586,7 +1586,7 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
         String firstGenIndexName = DataStream.getDefaultBackingIndexName(dataStreamName, 1);
 
         // Executing the method to be tested:
-        Set<Index> indicesToBeRemoved = dataStreamLifecycleService.maybeExecuteRetention(clusterService.state(), dataStream, Set.of());
+        Set<Index> indicesToBeRemoved = dataStreamLifecycleService2.maybeExecuteRetention(clusterService.state(), dataStream, Set.of());
         assertThat(indicesToBeRemoved, contains(state.getMetadata().index(firstGenIndexName).getIndex()));
     }
 
@@ -1653,18 +1653,18 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
             .build();
     }
 
-    private static DataStreamLifecycleService.ForceMergeRequestWrapper copyForceMergeRequestWrapperRequest(
-        DataStreamLifecycleService.ForceMergeRequestWrapper original
+    private static DataStreamLifecycleService2.ForceMergeRequestWrapper copyForceMergeRequestWrapperRequest(
+        DataStreamLifecycleService2.ForceMergeRequestWrapper original
     ) {
-        return new DataStreamLifecycleService.ForceMergeRequestWrapper(original);
+        return new DataStreamLifecycleService2.ForceMergeRequestWrapper(original);
     }
 
-    private static DataStreamLifecycleService.ForceMergeRequestWrapper mutateForceMergeRequestWrapper(
-        DataStreamLifecycleService.ForceMergeRequestWrapper original
+    private static DataStreamLifecycleService2.ForceMergeRequestWrapper mutateForceMergeRequestWrapper(
+        DataStreamLifecycleService2.ForceMergeRequestWrapper original
     ) {
         switch (randomIntBetween(0, 4)) {
             case 0 -> {
-                DataStreamLifecycleService.ForceMergeRequestWrapper copy = copyForceMergeRequestWrapperRequest(original);
+                DataStreamLifecycleService2.ForceMergeRequestWrapper copy = copyForceMergeRequestWrapperRequest(original);
                 String[] originalIndices = original.indices();
                 int changedIndexIndex;
                 if (originalIndices.length > 0) {
@@ -1680,22 +1680,22 @@ public class DataStreamLifecycleServiceTests extends ESTestCase {
                 return copy;
             }
             case 1 -> {
-                DataStreamLifecycleService.ForceMergeRequestWrapper copy = copyForceMergeRequestWrapperRequest(original);
+                DataStreamLifecycleService2.ForceMergeRequestWrapper copy = copyForceMergeRequestWrapperRequest(original);
                 copy.onlyExpungeDeletes(original.onlyExpungeDeletes() == false);
                 return copy;
             }
             case 2 -> {
-                DataStreamLifecycleService.ForceMergeRequestWrapper copy = copyForceMergeRequestWrapperRequest(original);
+                DataStreamLifecycleService2.ForceMergeRequestWrapper copy = copyForceMergeRequestWrapperRequest(original);
                 copy.flush(original.flush() == false);
                 return copy;
             }
             case 3 -> {
-                DataStreamLifecycleService.ForceMergeRequestWrapper copy = copyForceMergeRequestWrapperRequest(original);
+                DataStreamLifecycleService2.ForceMergeRequestWrapper copy = copyForceMergeRequestWrapperRequest(original);
                 copy.maxNumSegments(original.maxNumSegments() + 1);
                 return copy;
             }
             case 4 -> {
-                DataStreamLifecycleService.ForceMergeRequestWrapper copy = copyForceMergeRequestWrapperRequest(original);
+                DataStreamLifecycleService2.ForceMergeRequestWrapper copy = copyForceMergeRequestWrapperRequest(original);
                 copy.setRequestId(original.getRequestId() + 1);
                 return copy;
             }

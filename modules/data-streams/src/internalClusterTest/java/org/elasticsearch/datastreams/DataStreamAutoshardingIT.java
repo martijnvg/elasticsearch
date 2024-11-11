@@ -43,7 +43,7 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.core.Nullable;
-import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService;
+import org.elasticsearch.datastreams.lifecycle.DataStreamLifecycleService2;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.mapper.DateFieldMapper;
 import org.elasticsearch.index.shard.DocsStats;
@@ -101,13 +101,13 @@ public class DataStreamAutoshardingIT extends ESIntegTestCase {
             Settings.builder()
                 // we want to manually trigger the rollovers in this test suite to be able to assert incrementally the changes in shard
                 // configurations
-                .put(DataStreamLifecycleService.DATA_STREAM_LIFECYCLE_POLL_INTERVAL, "30d")
+                .put(DataStreamLifecycleService2.DATA_STREAM_LIFECYCLE_POLL_INTERVAL, "30d")
         );
     }
 
     @After
     public void resetClusterSetting() {
-        updateClusterSettings(Settings.builder().putNull(DataStreamLifecycleService.DATA_STREAM_LIFECYCLE_POLL_INTERVAL));
+        updateClusterSettings(Settings.builder().putNull(DataStreamLifecycleService2.DATA_STREAM_LIFECYCLE_POLL_INTERVAL));
     }
 
     public void testRolloverOnAutoShardCondition() throws Exception {

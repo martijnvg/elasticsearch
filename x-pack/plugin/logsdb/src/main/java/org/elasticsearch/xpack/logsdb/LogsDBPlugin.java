@@ -13,6 +13,8 @@ import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.IndexSettingProvider;
+import org.elasticsearch.license.LicenseService;
+import org.elasticsearch.license.XPackLicenseState;
 import org.elasticsearch.index.IndexVersion;
 import org.elasticsearch.license.LicenseService;
 import org.elasticsearch.license.XPackLicenseState;

@@ -179,14 +179,13 @@ public class NumberFieldMapper extends FieldMapper {
             this.indexMode = mode;
             this.indexed = Parameter.indexParam(m -> toType(m).indexed, () -> {
                 if (indexMode == IndexMode.TIME_SERIES) {
-                    var metricType = getMetric().getValue();
-                    return metricType != MetricType.COUNTER && metricType != MetricType.GAUGE;
+                    return false;
                 } else {
                     return true;
                 }
             });
             this.dimension = TimeSeriesParams.dimensionParam(m -> toType(m).dimension).addValidator(v -> {
-                if (v && (indexed.getValue() == false || hasDocValues.getValue() == false)) {
+                if (v && (indexed.getValue() == false && hasDocValues.getValue() == false)) {
                     throw new IllegalArgumentException(
                         "Field ["
                             + TimeSeriesParams.TIME_SERIES_DIMENSION_PARAM
@@ -404,7 +403,8 @@ public class NumberFieldMapper extends FieldMapper {
                     document.add(new HalfFloatPoint(name, f));
                 }
                 if (docValued) {
-                    document.add(new SortedNumericDocValuesField(name, HalfFloatPoint.halfFloatToSortableShort(f)));
+//                    document.add(new SortedNumericDocValuesField(name, HalfFloatPoint.halfFloatToSortableShort(f)));
+                    document.add(SortedNumericDocValuesField.indexedField(name, HalfFloatPoint.halfFloatToSortableShort(f)));
                 }
                 if (stored) {
                     document.add(new StoredField(name, f));
@@ -591,7 +591,8 @@ public class NumberFieldMapper extends FieldMapper {
                 if (indexed && docValued) {
                     document.add(new FloatField(name, f, Field.Store.NO));
                 } else if (docValued) {
-                    document.add(new SortedNumericDocValuesField(name, NumericUtils.floatToSortableInt(f)));
+//                    document.add(new SortedNumericDocValuesField(name, NumericUtils.floatToSortableInt(f)));
+                    document.add(SortedNumericDocValuesField.indexedField(name, NumericUtils.floatToSortableInt(f)));
                 } else if (indexed) {
                     document.add(new FloatPoint(name, f));
                 }
@@ -746,7 +747,8 @@ public class NumberFieldMapper extends FieldMapper {
                 if (indexed && docValued) {
                     document.add(new DoubleField(name, d, Field.Store.NO));
                 } else if (docValued) {
-                    document.add(new SortedNumericDocValuesField(name, NumericUtils.doubleToSortableLong(d)));
+//                    document.add(new SortedNumericDocValuesField(name, NumericUtils.doubleToSortableLong(d)));
+                    document.add(SortedNumericDocValuesField.indexedField(name, NumericUtils.doubleToSortableLong(d)));
                 } else if (indexed) {
                     document.add(new DoublePoint(name, d));
                 }
@@ -1185,7 +1187,8 @@ public class NumberFieldMapper extends FieldMapper {
                 if (indexed && docValued) {
                     document.add(new IntField(name, i, Field.Store.NO));
                 } else if (docValued) {
-                    document.add(new SortedNumericDocValuesField(name, i));
+                    document.add(SortedNumericDocValuesField.indexedField(name, i));
+//                    document.add(new SortedNumericDocValuesField(name, i));
                 } else if (indexed) {
                     document.add(new IntPoint(name, i));
                 }
@@ -1337,7 +1340,8 @@ public class NumberFieldMapper extends FieldMapper {
                 if (indexed && docValued) {
                     document.add(new LongField(name, l, Field.Store.NO));
                 } else if (docValued) {
-                    document.add(new SortedNumericDocValuesField(name, l));
+//                    document.add(new SortedNumericDocValuesField(name, l));
+                    document.add(SortedNumericDocValuesField.indexedField(name, l));
                 } else if (indexed) {
                     document.add(new LongPoint(name, l));
                 }

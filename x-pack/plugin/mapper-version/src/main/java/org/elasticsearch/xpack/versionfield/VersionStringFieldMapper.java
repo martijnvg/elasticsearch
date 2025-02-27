@@ -7,7 +7,6 @@
 
 package org.elasticsearch.xpack.versionfield;
 
-import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FieldType;
 import org.apache.lucene.document.SortedSetDocValuesField;
 import org.apache.lucene.index.FilteredTermsEnum;
@@ -98,7 +97,7 @@ public class VersionStringFieldMapper extends FieldMapper {
             FieldType ft = new FieldType();
             ft.setTokenized(false);
             ft.setOmitNorms(true);
-            ft.setIndexOptions(IndexOptions.DOCS);
+            ft.setIndexOptions(IndexOptions.NONE);
             FIELD_TYPE = freezeAndDeduplicateFieldType(ft);
         }
     }
@@ -391,8 +390,8 @@ public class VersionStringFieldMapper extends FieldMapper {
 
         EncodedVersion encoding = encodeVersion(versionString);
         BytesRef encodedVersion = encoding.bytesRef;
-        context.doc().add(new Field(fieldType().name(), encodedVersion, fieldType));
         context.doc().add(new SortedSetDocValuesField(fieldType().name(), encodedVersion));
+//        context.doc().add(SortedSetDocValuesField.indexedField(fieldType().name(), encodedVersion));
     }
 
     @Override

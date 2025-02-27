@@ -345,7 +345,7 @@ public class ConstantKeywordFieldMapper extends FieldMapper {
         if (context.mappingLookup().isSourceSynthetic()) {
             // Remember which documents had value in source so that it can be correctly
             // reconstructed in synthetic source
-            context.doc().add(new SortedNumericDocValuesField(fieldType().name(), 1));
+//            context.doc().add(new SortedNumericDocValuesField(fieldType().name(), 1));
         }
     }
 

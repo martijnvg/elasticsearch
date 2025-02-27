@@ -244,6 +244,19 @@ final class IndexDiskUsageAnalyzer {
         return dv;
     }
 
+    private <DV extends DocIdSetIterator> DV iterateDocValues2(
+        int maxDocs,
+        CheckedSupplier<DV, IOException> dvReader,
+        CheckedConsumer<DV, IOException> valueAccessor
+    ) throws IOException {
+        DV dv = dvReader.get();
+        for (int docId = dv.nextDoc(); docId < maxDocs; docId = dv.nextDoc()) {
+            cancellationChecker.logEvent();
+            valueAccessor.accept(dv);
+        }
+        return dv;
+    }
+
     void analyzeDocValues(SegmentReader reader, IndexDiskUsageStats stats) throws IOException {
         if (reader.getDocValuesReader() == null) {
             return;
@@ -258,36 +271,50 @@ final class IndexDiskUsageAnalyzer {
             cancellationChecker.checkForCancellation();
             directory.resetBytesRead();
             switch (dvType) {
-                case NUMERIC -> iterateDocValues(maxDocs, () -> docValuesReader.getNumeric(field), NumericDocValues::longValue);
-                case SORTED_NUMERIC -> iterateDocValues(maxDocs, () -> docValuesReader.getSortedNumeric(field), dv -> {
+                case NUMERIC -> iterateDocValues2(maxDocs, () -> docValuesReader.getNumeric(field), NumericDocValues::longValue);
+                case SORTED_NUMERIC -> iterateDocValues2(maxDocs, () -> docValuesReader.getSortedNumeric(field), dv -> {
                     for (int i = 0; i < dv.docValueCount(); i++) {
                         cancellationChecker.logEvent();
                         dv.nextValue();
                     }
                 });
-                case BINARY -> iterateDocValues(maxDocs, () -> docValuesReader.getBinary(field), BinaryDocValues::binaryValue);
+                case BINARY -> iterateDocValues2(maxDocs, () -> docValuesReader.getBinary(field), BinaryDocValues::binaryValue);
                 case SORTED -> {
-                    SortedDocValues sorted = iterateDocValues(maxDocs, () -> docValuesReader.getSorted(field), SortedDocValues::ordValue);
+                    SortedDocValues sorted = iterateDocValues2(maxDocs, () -> docValuesReader.getSorted(field), SortedDocValues::ordValue);
                     if (sorted.getValueCount() > 0) {
-                        sorted.lookupOrd(0);
-                        sorted.lookupOrd(sorted.getValueCount() - 1);
+                        for (int ord = 0; ord < sorted.getValueCount(); ord++) {
+                            cancellationChecker.logEvent();
+                            sorted.lookupOrd(ord);
+                        }
                     }
                 }
                 case SORTED_SET -> {
-                    SortedSetDocValues sortedSet = iterateDocValues(maxDocs, () -> docValuesReader.getSortedSet(field), dv -> {
+                    SortedSetDocValues sortedSet = iterateDocValues2(maxDocs, () -> docValuesReader.getSortedSet(field), dv -> {
                         for (int i = 0; i < dv.docValueCount(); i++) {
                             cancellationChecker.logEvent();
                         }
                     });
                     if (sortedSet.getValueCount() > 0) {
-                        sortedSet.lookupOrd(0);
-                        sortedSet.lookupOrd(sortedSet.getValueCount() - 1);
+                        for (long ord = 0; ord < sortedSet.getValueCount(); ord++) {
+                            cancellationChecker.logEvent();
+                            sortedSet.lookupOrd(ord);
+                        }
                     }
                 }
                 default -> {
                     assert false : "Unknown docValues type [" + dvType + "]";
                     throw new IllegalStateException("Unknown docValues type [" + dvType + "]");
                 }
+            }
+            switch (field.docValuesSkipIndexType()) {
+                case NONE -> {}
+                case RANGE -> {
+                    var skipper = docValuesReader.getSkipper(field);
+                    while(skipper.maxDocID(0) != DocIdSetIterator.NO_MORE_DOCS) {
+                        skipper.advance(skipper.maxDocID(0) + 1);
+                    }
+                }
+                default -> throw new IllegalStateException("Unknown skipper [" + field.docValuesSkipIndexType() + "]");
             }
             stats.addDocValues(field.name, directory.getBytesRead());
         }

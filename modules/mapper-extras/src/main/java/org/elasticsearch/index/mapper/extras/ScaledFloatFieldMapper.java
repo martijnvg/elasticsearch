@@ -142,8 +142,7 @@ public class ScaledFloatFieldMapper extends FieldMapper {
             this.indexMode = indexMode;
             this.indexed = Parameter.indexParam(m -> toType(m).indexed, () -> {
                 if (indexMode == IndexMode.TIME_SERIES) {
-                    var metricType = getMetric().getValue();
-                    return metricType != TimeSeriesParams.MetricType.COUNTER && metricType != TimeSeriesParams.MetricType.GAUGE;
+                    return false;
                 } else {
                     return true;
                 }

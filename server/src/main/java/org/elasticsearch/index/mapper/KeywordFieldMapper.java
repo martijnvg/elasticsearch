@@ -105,8 +105,9 @@ public final class KeywordFieldMapper extends FieldMapper {
             FieldType ft = new FieldType();
             ft.setTokenized(false);
             ft.setOmitNorms(true);
-            ft.setIndexOptions(IndexOptions.DOCS);
+            ft.setIndexOptions(IndexOptions.NONE);
             ft.setDocValuesType(DocValuesType.SORTED_SET);
+            ft.setDocValuesSkipIndexType(DocValuesSkipIndexType.RANGE);
             FIELD_TYPE = freezeAndDeduplicateFieldType(ft);
         }
 
@@ -159,7 +160,7 @@ public final class KeywordFieldMapper extends FieldMapper {
 
     public static final class Builder extends FieldMapper.DimensionBuilder {
 
-        private final Parameter<Boolean> indexed = Parameter.indexParam(m -> toType(m).indexed, true);
+        private final Parameter<Boolean> indexed;
         private final Parameter<Boolean> hasDocValues = Parameter.docValuesParam(m -> toType(m).hasDocValues, true);
         private final Parameter<Boolean> stored = Parameter.storeParam(m -> toType(m).fieldType.stored(), false);
 
@@ -263,10 +264,11 @@ public final class KeywordFieldMapper extends FieldMapper {
                 null
             ).acceptsNull();
             this.script.precludesParameters(nullValue);
+            this.indexed = Parameter.indexParam(m -> toType(m).indexed, () -> indexMode != IndexMode.TIME_SERIES);
             addScriptValidation(script, indexed, hasDocValues);
 
             this.dimension = TimeSeriesParams.dimensionParam(m -> toType(m).fieldType().isDimension()).addValidator(v -> {
-                if (v && (indexed.getValue() == false || hasDocValues.getValue() == false)) {
+                if (v && (indexed.getValue() == false && hasDocValues.getValue() == false)) {
                     throw new IllegalArgumentException(
                         "Field ["
                             + TimeSeriesParams.TIME_SERIES_DIMENSION_PARAM

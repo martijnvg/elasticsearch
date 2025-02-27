@@ -40,6 +40,7 @@ import org.apache.lucene.util.LongValues;
 import org.apache.lucene.util.compress.LZ4;
 import org.apache.lucene.util.packed.DirectMonotonicReader;
 import org.apache.lucene.util.packed.PackedInts;
+import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.core.IOUtils;
 
 import java.io.IOException;
@@ -826,6 +827,7 @@ public class ES87TSDBDocValuesProducer extends DocValuesProducer {
             if (info == null) {
                 throw new CorruptIndexException("Invalid field number: " + fieldNumber, meta);
             }
+//            System.out.println("name: " + info.name);
             byte type = meta.readByte();
             if (info.docValuesSkipIndexType() != DocValuesSkipIndexType.NONE) {
                 skippers.put(info.name, readDocValueSkipperMeta(meta));
@@ -885,6 +887,14 @@ public class ES87TSDBDocValuesProducer extends DocValuesProducer {
             entry.valuesOffset = meta.readLong();
             entry.valuesLength = meta.readLong();
         }
+
+//        System.out.printf(
+//            "docsWithFieldLength=%s, numValues=%d, indexLength=%s, valuesLength=%s\n",
+//            ByteSizeValue.ofBytes(entry.docsWithFieldLength),
+//            entry.numValues,
+//            ByteSizeValue.ofBytes(entry.indexLength),
+//            ByteSizeValue.ofBytes(entry.valuesLength)
+//        );
     }
 
     private BinaryEntry readBinary(IndexInput meta) throws IOException {
@@ -926,6 +936,14 @@ public class ES87TSDBDocValuesProducer extends DocValuesProducer {
             entry.addressesMeta = DirectMonotonicReader.loadMeta(meta, entry.numDocsWithField + 1, blockShift);
             entry.addressesLength = meta.readLong();
         }
+//        System.out.printf(
+//            "docsWithFieldLength=%s, numValues=%d, indexLength=%s, valuesLength=%s, addressesLength=%s\n",
+//            ByteSizeValue.ofBytes(entry.docsWithFieldLength),
+//            entry.numValues,
+//            ByteSizeValue.ofBytes(entry.indexLength),
+//            ByteSizeValue.ofBytes(entry.valuesLength),
+//            ByteSizeValue.ofBytes(entry.addressesLength)
+//        );
         return entry;
     }
 
@@ -935,6 +953,17 @@ public class ES87TSDBDocValuesProducer extends DocValuesProducer {
         readNumeric(meta, entry.ordsEntry);
         entry.termsDictEntry = new TermsDictEntry();
         readTermDict(meta, entry.termsDictEntry);
+//        System.out.printf(
+//            "docsWithFieldLength=%s, numValues=%d, indexLength=%s, valuesLength=%s, termsDictSize=%d, termsAddressesLength%s, termsIndexLength=%s, termsDataLength=%s\n",
+//            ByteSizeValue.ofBytes(entry.ordsEntry.valuesLength),
+//            entry.ordsEntry.numValues,
+//            ByteSizeValue.ofBytes(entry.ordsEntry.indexLength),
+//            ByteSizeValue.ofBytes(entry.ordsEntry.valuesLength),
+//            entry.termsDictEntry.termsDictSize,
+//            ByteSizeValue.ofBytes(entry.termsDictEntry.termsAddressesLength),
+//            ByteSizeValue.ofBytes(entry.termsDictEntry.termsIndexLength),
+//            ByteSizeValue.ofBytes(entry.termsDictEntry.termsDataLength)
+//        );
         return entry;
     }
 
@@ -944,6 +973,17 @@ public class ES87TSDBDocValuesProducer extends DocValuesProducer {
         switch (multiValued) {
             case 0: // singlevalued
                 entry.singleValueEntry = readSorted(meta);
+//                System.out.printf(
+//                    "docsWithFieldLength=%s, numValues=%d, indexLength=%s, valuesLength=%s, termsDictSize=%d, termsAddressesLength%s, termsIndexLength=%s, termsDataLength=%s\n",
+//                    ByteSizeValue.ofBytes(entry.singleValueEntry.ordsEntry.docsWithFieldLength),
+//                    entry.singleValueEntry.ordsEntry.numValues,
+//                    ByteSizeValue.ofBytes(entry.singleValueEntry.ordsEntry.indexLength),
+//                    ByteSizeValue.ofBytes(entry.singleValueEntry.ordsEntry.valuesLength),
+//                    entry.singleValueEntry.termsDictEntry.termsDictSize,
+//                    ByteSizeValue.ofBytes(entry.singleValueEntry.termsDictEntry.termsAddressesLength),
+//                    ByteSizeValue.ofBytes(entry.singleValueEntry.termsDictEntry.termsIndexLength),
+//                    ByteSizeValue.ofBytes(entry.singleValueEntry.termsDictEntry.termsDataLength)
+//                );
                 return entry;
             case 1: // multivalued
                 break;
@@ -954,6 +994,17 @@ public class ES87TSDBDocValuesProducer extends DocValuesProducer {
         readSortedNumeric(meta, entry.ordsEntry);
         entry.termsDictEntry = new TermsDictEntry();
         readTermDict(meta, entry.termsDictEntry);
+//        System.out.printf(
+//            "docsWithFieldLength=%s, numValues=%d, indexLength=%s, valuesLength=%s, termsDictSize=%d, termsAddressesLength%s, termsIndexLength=%s, termsDataLength=%s\n",
+//            ByteSizeValue.ofBytes(entry.ordsEntry.valuesLength),
+//            entry.ordsEntry.numValues,
+//            ByteSizeValue.ofBytes(entry.ordsEntry.indexLength),
+//            ByteSizeValue.ofBytes(entry.ordsEntry.valuesLength),
+//            entry.termsDictEntry.termsDictSize,
+//            ByteSizeValue.ofBytes(entry.termsDictEntry.termsAddressesLength),
+//            ByteSizeValue.ofBytes(entry.termsDictEntry.termsIndexLength),
+//            ByteSizeValue.ofBytes(entry.termsDictEntry.termsDataLength)
+//        );
         return entry;
     }
 

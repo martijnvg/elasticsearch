@@ -29,6 +29,7 @@ import org.elasticsearch.common.network.InetAddresses;
 import org.elasticsearch.common.network.NetworkAddress;
 import org.elasticsearch.core.Nullable;
 import org.elasticsearch.core.Tuple;
+import org.elasticsearch.index.IndexMode;
 import org.elasticsearch.index.IndexVersion;
 import org.elasticsearch.index.IndexVersions;
 import org.elasticsearch.index.fielddata.FieldDataContext;
@@ -73,7 +74,7 @@ public class IpFieldMapper extends FieldMapper {
 
     public static final class Builder extends FieldMapper.DimensionBuilder {
 
-        private final Parameter<Boolean> indexed = Parameter.indexParam(m -> toType(m).indexed, true);
+        private final Parameter<Boolean> indexed;
         private final Parameter<Boolean> hasDocValues = Parameter.docValuesParam(m -> toType(m).hasDocValues, true);
         private final Parameter<Boolean> stored = Parameter.storeParam(m -> toType(m).stored, false);
 
@@ -94,13 +95,15 @@ public class IpFieldMapper extends FieldMapper {
         private final IndexVersion indexCreatedVersion;
         private final ScriptCompiler scriptCompiler;
         private final SourceKeepMode indexSourceKeepMode;
+        private final IndexMode indexMode;
 
         public Builder(
             String name,
             ScriptCompiler scriptCompiler,
             boolean ignoreMalformedByDefault,
             IndexVersion indexCreatedVersion,
-            SourceKeepMode indexSourceKeepMode
+            SourceKeepMode indexSourceKeepMode,
+            IndexMode indexMode
         ) {
             super(name);
             this.scriptCompiler = Objects.requireNonNull(scriptCompiler);
@@ -108,9 +111,16 @@ public class IpFieldMapper extends FieldMapper {
             this.indexCreatedVersion = indexCreatedVersion;
             this.ignoreMalformed = Parameter.boolParam("ignore_malformed", true, m -> toType(m).ignoreMalformed, ignoreMalformedByDefault);
             this.script.precludesParameters(nullValue, ignoreMalformed);
+            this.indexed = Parameter.indexParam(m -> toType(m).indexed, () -> {
+                if (indexMode == IndexMode.TIME_SERIES) {
+                    return false;
+                } else {
+                    return true;
+                }
+            });
             addScriptValidation(script, indexed, hasDocValues);
             this.dimension = TimeSeriesParams.dimensionParam(m -> toType(m).dimension).addValidator(v -> {
-                if (v && (indexed.getValue() == false || hasDocValues.getValue() == false)) {
+                if (v && (indexed.getValue() == false && hasDocValues.getValue() == false)) {
                     throw new IllegalArgumentException(
                         "Field ["
                             + TimeSeriesParams.TIME_SERIES_DIMENSION_PARAM
@@ -123,6 +133,7 @@ public class IpFieldMapper extends FieldMapper {
                 }
             });
             this.indexSourceKeepMode = indexSourceKeepMode;
+            this.indexMode = indexMode;
         }
 
         Builder nullValue(String nullValue) {
@@ -226,7 +237,14 @@ public class IpFieldMapper extends FieldMapper {
 
     public static final TypeParser PARSER = createTypeParserWithLegacySupport((n, c) -> {
         boolean ignoreMalformedByDefault = IGNORE_MALFORMED_SETTING.get(c.getSettings());
-        return new Builder(n, c.scriptCompiler(), ignoreMalformedByDefault, c.indexVersionCreated(), c.getIndexSettings().sourceKeepMode());
+        return new Builder(
+            n,
+            c.scriptCompiler(),
+            ignoreMalformedByDefault,
+            c.indexVersionCreated(),
+            c.getIndexSettings().sourceKeepMode(),
+            c.getIndexSettings().getMode()
+        );
     });
 
     public static final class IpFieldType extends SimpleMappedFieldType {
@@ -523,6 +541,7 @@ public class IpFieldMapper extends FieldMapper {
     private final ScriptCompiler scriptCompiler;
     private final SourceKeepMode indexSourceKeepMode;
     private final String offsetsFieldName;
+    private final IndexMode indexMode;
 
     private IpFieldMapper(
         String simpleName,
@@ -548,6 +567,7 @@ public class IpFieldMapper extends FieldMapper {
         this.storeIgnored = storeIgnored;
         this.indexSourceKeepMode = builder.indexSourceKeepMode;
         this.offsetsFieldName = offsetsFieldName;
+        this.indexMode = builder.indexMode;
     }
 
     @Override
@@ -605,7 +625,8 @@ public class IpFieldMapper extends FieldMapper {
             context.doc().add(field);
         }
         if (hasDocValues) {
-            context.doc().add(new SortedSetDocValuesField(fieldType().name(), new BytesRef(InetAddressPoint.encode(address))));
+//            context.doc().add(new SortedSetDocValuesField(fieldType().name(), new BytesRef(InetAddressPoint.encode(address))));
+            context.doc().add(SortedSetDocValuesField.indexedField(fieldType().name(), new BytesRef(InetAddressPoint.encode(address))));
         } else if (stored || indexed) {
             context.addToFieldNames(fieldType().name());
         }
@@ -626,9 +647,9 @@ public class IpFieldMapper extends FieldMapper {
 
     @Override
     public FieldMapper.Builder getMergeBuilder() {
-        return new Builder(leafName(), scriptCompiler, ignoreMalformedByDefault, indexCreatedVersion, indexSourceKeepMode).dimension(
-            dimension
-        ).init(this);
+        return new Builder(leafName(), scriptCompiler, ignoreMalformedByDefault, indexCreatedVersion, indexSourceKeepMode, indexMode)
+            .dimension(dimension)
+            .init(this);
     }
 
     @Override

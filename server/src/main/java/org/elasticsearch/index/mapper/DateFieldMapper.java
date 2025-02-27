@@ -456,7 +456,7 @@ public final class DateFieldMapper extends FieldMapper {
             c.getIndexSettings().getMode(),
             c.getIndexSettings().getIndexSortConfig(),
             c.indexVersionCreated(),
-            IndexSettings.USE_DOC_VALUES_SKIPPER.get(c.getSettings())
+            true //IndexSettings.USE_DOC_VALUES_SKIPPER.get(c.getSettings())
         );
     });
 
@@ -471,7 +471,7 @@ public final class DateFieldMapper extends FieldMapper {
             c.getIndexSettings().getMode(),
             c.getIndexSettings().getIndexSortConfig(),
             c.indexVersionCreated(),
-            IndexSettings.USE_DOC_VALUES_SKIPPER.get(c.getSettings())
+            true //IndexSettings.USE_DOC_VALUES_SKIPPER.get(c.getSettings())
         );
     });
 
@@ -1055,7 +1055,7 @@ public final class DateFieldMapper extends FieldMapper {
         return indexCreatedVersion.onOrAfter(IndexVersions.TIMESTAMP_DOC_VALUES_SPARSE_INDEX)
             && useDocValuesSkipper
             && hasDocValues
-            && IndexMode.LOGSDB.equals(indexMode)
+            && (indexMode == IndexMode.LOGSDB || indexMode == IndexMode.TIME_SERIES)
             && indexSortConfig != null
             && indexSortConfig.hasSortOnField(fullFieldName)
             && DataStreamTimestampFieldMapper.DEFAULT_PATH.equals(fullFieldName);

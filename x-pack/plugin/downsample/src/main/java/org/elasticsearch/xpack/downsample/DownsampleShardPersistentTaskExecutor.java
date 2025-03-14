@@ -25,9 +25,11 @@ import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.cluster.routing.IndexShardRoutingTable;
 import org.elasticsearch.cluster.routing.ShardRouting;
+import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.util.concurrent.AbstractRunnable;
 import org.elasticsearch.common.util.concurrent.EsExecutors;
+import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexNotFoundException;
 import org.elasticsearch.index.mapper.TimeSeriesIdFieldMapper;
 import org.elasticsearch.index.shard.ShardId;
@@ -53,6 +55,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Executor;
+import java.util.function.Supplier;
 
 public class DownsampleShardPersistentTaskExecutor extends PersistentTasksExecutor<DownsampleShardTaskParams> {
     private static final Logger LOGGER = LogManager.getLogger(DownsampleShardPersistentTaskExecutor.class);
@@ -185,6 +188,7 @@ public class DownsampleShardPersistentTaskExecutor extends PersistentTasksExecut
     static void realNodeOperation(
         Client client,
         IndicesService indicesService,
+        Supplier<ClusterState> getClusterState,
         DownsampleMetrics downsampleMetrics,
         DownsampleShardTask task,
         DownsampleShardTaskParams params,
@@ -202,6 +206,7 @@ public class DownsampleShardPersistentTaskExecutor extends PersistentTasksExecut
                     DownsampleShardIndexerStatus.INITIALIZED,
                     lastDownsampledTsid
                 );
+                Index index = getClusterState.get().getMetadata().getDefaultProject().index(params.downsampleIndex()).getIndex();
                 try {
                     final var downsampleShardIndexer = new DownsampleShardIndexer(
                         task,
@@ -209,7 +214,7 @@ public class DownsampleShardPersistentTaskExecutor extends PersistentTasksExecut
                         indicesService.indexServiceSafe(params.shardId().getIndex()),
                         downsampleMetrics,
                         params.shardId(),
-                        params.downsampleIndex(),
+                        new ShardId(index, params.shardId().getId()),
                         params.downsampleConfig(),
                         params.metrics(),
                         params.labels(),
@@ -303,25 +308,36 @@ public class DownsampleShardPersistentTaskExecutor extends PersistentTasksExecut
             private final Client client;
             private final IndicesService indicesService;
             private final DownsampleMetrics downsampleMetrics;
+            private final Supplier<ClusterState> getClusterState;
 
             @Inject
             public TA(
                 TransportService transportService,
                 ActionFilters actionFilters,
                 Client client,
+                ClusterService clusterService,
                 IndicesService indicesService,
                 DownsampleMetrics downsampleMetrics
             ) {
                 // TODO: consider moving to Downsample.DOWSAMPLE_TASK_THREAD_POOL_NAME and simplify realNodeOperation
                 super(NAME, actionFilters, transportService.getTaskManager(), EsExecutors.DIRECT_EXECUTOR_SERVICE);
                 this.client = client;
+                this.getClusterState = clusterService::state;
                 this.indicesService = indicesService;
                 this.downsampleMetrics = downsampleMetrics;
             }
 
             @Override
             protected void doExecute(Task t, Request request, ActionListener<ActionResponse.Empty> listener) {
-                realNodeOperation(client, indicesService, downsampleMetrics, request.task, request.params, request.lastDownsampleTsid);
+                realNodeOperation(
+                    client,
+                    indicesService,
+                    getClusterState,
+                    downsampleMetrics,
+                    request.task,
+                    request.params,
+                    request.lastDownsampleTsid
+                );
                 listener.onResponse(ActionResponse.Empty.INSTANCE);
             }
 

@@ -56,6 +56,7 @@ import org.elasticsearch.index.mapper.TimeSeriesIdFieldMapper;
 import org.elasticsearch.index.mapper.TimeSeriesParams;
 import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.index.shard.IndexShard;
+import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.persistent.PersistentTasksService;
 import org.elasticsearch.plugins.Plugin;
@@ -704,7 +705,7 @@ public class DownsampleActionSingleNodeTests extends ESSingleNodeTestCase {
             indexService,
             getInstanceFromNode(DownsampleMetrics.class),
             shard.shardId(),
-            downsampleIndex,
+            new ShardId(downsampleIndex, IndexMetadata.INDEX_UUID_NA_VALUE, shard.shardId().getId()),
             config,
             new String[] { FIELD_NUMERIC_1, FIELD_NUMERIC_2 },
             new String[] {},
@@ -754,7 +755,7 @@ public class DownsampleActionSingleNodeTests extends ESSingleNodeTestCase {
             indexService,
             getInstanceFromNode(DownsampleMetrics.class),
             shard.shardId(),
-            downsampleIndex,
+            new ShardId(downsampleIndex, IndexMetadata.INDEX_UUID_NA_VALUE, shard.shardId().getId()),
             config,
             new String[] { FIELD_NUMERIC_1, FIELD_NUMERIC_2 },
             new String[] {},
@@ -822,7 +823,7 @@ public class DownsampleActionSingleNodeTests extends ESSingleNodeTestCase {
             indexService,
             getInstanceFromNode(DownsampleMetrics.class),
             shard.shardId(),
-            downsampleIndex,
+            new ShardId(downsampleIndex, IndexMetadata.INDEX_UUID_NA_VALUE, shard.shardId().getId()),
             config,
             new String[] { FIELD_NUMERIC_1, FIELD_NUMERIC_2 },
             new String[] {},
@@ -875,7 +876,7 @@ public class DownsampleActionSingleNodeTests extends ESSingleNodeTestCase {
                 indexService,
                 getInstanceFromNode(DownsampleMetrics.class),
                 shard.shardId(),
-                downsampleIndex,
+                new ShardId(downsampleIndex, IndexMetadata.INDEX_UUID_NA_VALUE, shard.shardId().getId()),
                 config,
                 new String[] { FIELD_NUMERIC_1, FIELD_NUMERIC_2 },
                 new String[] {},
@@ -933,7 +934,7 @@ public class DownsampleActionSingleNodeTests extends ESSingleNodeTestCase {
             indexService,
             getInstanceFromNode(DownsampleMetrics.class),
             shard.shardId(),
-            downsampleIndex,
+            new ShardId(downsampleIndex, IndexMetadata.INDEX_UUID_NA_VALUE, shard.shardId().getId()),
             config,
             new String[] { FIELD_NUMERIC_1, FIELD_NUMERIC_2 },
             new String[] {},
@@ -1009,7 +1010,7 @@ public class DownsampleActionSingleNodeTests extends ESSingleNodeTestCase {
             indexService,
             getInstanceFromNode(DownsampleMetrics.class),
             shard.shardId(),
-            downsampleIndex,
+            new ShardId(downsampleIndex, IndexMetadata.INDEX_UUID_NA_VALUE, shard.shardId().getId()),
             config,
             new String[] { FIELD_NUMERIC_1, FIELD_NUMERIC_2 },
             new String[] {},

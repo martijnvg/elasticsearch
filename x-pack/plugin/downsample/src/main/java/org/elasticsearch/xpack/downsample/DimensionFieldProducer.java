@@ -112,4 +112,8 @@ public class DimensionFieldProducer extends AbstractDownsampleFieldProducer {
             builder.field(this.dimension.name, this.dimension.value());
         }
     }
+
+    public Object getValue() {
+        return this.dimension.value;
+    }
 }

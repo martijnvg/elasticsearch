@@ -427,7 +427,7 @@ public abstract class IndexRouting {
                 hashes.add(new NameAndHash(new BytesRef(path), hash(value), hashes.size()));
             }
 
-            private int buildHash(IntSupplier onEmpty) {
+            public int buildHash(IntSupplier onEmpty) {
                 if (hashes.isEmpty()) {
                     return onEmpty.getAsInt();
                 }

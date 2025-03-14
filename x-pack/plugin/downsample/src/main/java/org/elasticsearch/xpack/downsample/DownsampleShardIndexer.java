@@ -17,14 +17,18 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.action.bulk.BulkItemRequest;
 import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkProcessor2;
 import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
+import org.elasticsearch.action.bulk.BulkShardRequest;
+import org.elasticsearch.action.bulk.TransportShardBulkAction;
 import org.elasticsearch.action.downsample.DownsampleConfig;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.client.internal.Client;
+import org.elasticsearch.cluster.routing.IndexRouting;
 import org.elasticsearch.common.Rounding;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.unit.ByteSizeUnit;
@@ -38,6 +42,7 @@ import org.elasticsearch.index.fielddata.SortedNumericDoubleValues;
 import org.elasticsearch.index.mapper.DateFieldMapper;
 import org.elasticsearch.index.mapper.DocCountFieldMapper;
 import org.elasticsearch.index.mapper.TimeSeriesIdFieldMapper;
+import org.elasticsearch.index.mapper.TimeSeriesRoutingHashFieldMapper;
 import org.elasticsearch.index.query.SearchExecutionContext;
 import org.elasticsearch.index.shard.IndexShard;
 import org.elasticsearch.index.shard.ShardId;
@@ -89,7 +94,7 @@ class DownsampleShardIndexer {
     private final IndexShard indexShard;
     private final Client client;
     private final DownsampleMetrics downsampleMetrics;
-    private final String downsampleIndex;
+    private final ShardId downsSampleShardId;
     private final Engine.Searcher searcher;
     private final SearchExecutionContext searchExecutionContext;
     private final DateFieldMapper.DateFieldType timestampField;
@@ -109,7 +114,7 @@ class DownsampleShardIndexer {
         final IndexService indexService,
         final DownsampleMetrics downsampleMetrics,
         final ShardId shardId,
-        final String downsampleIndex,
+        final ShardId downsSampleShardId,
         final DownsampleConfig config,
         final String[] metrics,
         final String[] labels,
@@ -120,7 +125,7 @@ class DownsampleShardIndexer {
         this.client = client;
         this.downsampleMetrics = downsampleMetrics;
         this.indexShard = indexService.getShard(shardId.id());
-        this.downsampleIndex = downsampleIndex;
+        this.downsSampleShardId = downsSampleShardId;
         this.searcher = indexShard.acquireSearcher("downsampling");
         this.state = state;
         Closeable toClose = searcher;
@@ -330,12 +335,32 @@ class DownsampleShardIndexer {
             }
         };
 
-        return BulkProcessor2.builder(client::bulk, listener, client.threadPool())
+        // TODO: consider allocating target shard on the same node and do local indexing with bulk api as middle man and without xcontent:
+        // (during downsampling there is no fail over, since number of replicas is set to zero to speedup indexing into target shard)
+        return BulkProcessor2.builder(this::shardBulk, listener, client.threadPool())
             .setBulkActions(DOWNSAMPLE_BULK_ACTIONS)
             .setBulkSize(DOWNSAMPLE_BULK_SIZE)
             .setMaxBytesInFlight(downsampleMaxBytesInFlight)
             .setMaxNumberOfRetries(3)
             .build();
+    }
+
+    // Bypass bulk action and use shard bulk action directly:
+    void shardBulk(BulkRequest request, ActionListener<BulkResponse> listener) {
+        var bulkItemRequests = new BulkItemRequest[request.requests().size()];
+        for (int i = 0; i < bulkItemRequests.length; i++) {
+            if (request.requests().get(i) instanceof IndexRequest indexRequest) {
+                bulkItemRequests[i] = new BulkItemRequest(i, indexRequest);
+            } else {
+                assert false;
+                throw new IllegalArgumentException();
+            }
+        }
+
+        BulkShardRequest shardRequest = new BulkShardRequest(downsSampleShardId, request.getRefreshPolicy(), bulkItemRequests);
+        client.execute(TransportShardBulkAction.TYPE, shardRequest, ActionListener.wrap(bulkShardResponse -> {
+            listener.onResponse(new BulkResponse(bulkShardResponse.getResponses(), 1));
+        }, listener::onFailure));
     }
 
     private class TimeSeriesBucketCollector extends BucketCollector {
@@ -464,8 +489,7 @@ class DownsampleShardIndexer {
                     bulkCollection();
                     // Flush downsample doc if not empty
                     if (downsampleBucketBuilder.isEmpty() == false) {
-                        XContentBuilder doc = downsampleBucketBuilder.buildDownsampleDocument();
-                        indexBucket(doc);
+                        indexBucket();
                     }
 
                     // Create new downsample bucket
@@ -539,15 +563,15 @@ class DownsampleShardIndexer {
             }
         }
 
-        private void indexBucket(XContentBuilder doc) {
-            IndexRequestBuilder request = client.prepareIndex(downsampleIndex);
-            request.setSource(doc);
+        private void indexBucket() throws IOException {
+            IndexRequestBuilder builder = client.prepareIndex(downsSampleShardId.getIndexName());
+            downsampleBucketBuilder.prepareIndexRequest(builder);
+            IndexRequest request = builder.request();
             if (logger.isTraceEnabled()) {
-                logger.trace("Indexing downsample doc: [{}]", Strings.toString(doc));
+                logger.trace("Indexing downsample doc: [{}]", Strings.toString(request.source()));
             }
-            IndexRequest indexRequest = request.request();
             task.setLastIndexingTimestamp(System.currentTimeMillis());
-            bulkProcessor.addWithBackpressure(indexRequest, () -> abort);
+            bulkProcessor.addWithBackpressure(request, () -> abort);
         }
 
         @Override
@@ -561,8 +585,7 @@ class DownsampleShardIndexer {
             // Flush downsample doc if not empty
             bulkCollection();
             if (downsampleBucketBuilder.isEmpty() == false) {
-                XContentBuilder doc = downsampleBucketBuilder.buildDownsampleDocument();
-                indexBucket(doc);
+                indexBucket();
             }
 
             // check cancel after the flush all data
@@ -652,19 +675,31 @@ class DownsampleShardIndexer {
             }
         }
 
-        public XContentBuilder buildDownsampleDocument() throws IOException {
+        public void prepareIndexRequest(IndexRequestBuilder indexRequest) throws IOException {
             XContentBuilder builder = XContentFactory.contentBuilder(XContentType.SMILE);
             builder.startObject();
             if (isEmpty()) {
                 builder.endObject();
-                return builder;
+                indexRequest.setSource(builder);
+                return;
             }
+
+            var indexRouting = (IndexRouting.ExtractFromSource) indexShard.indexSettings().getIndexRouting();
+            var routingBuilder = indexRouting.builder();
+
             builder.field(timestampField.name(), timestampFormat.format(timestamp));
             builder.field(DocCountFieldMapper.NAME, docCount);
 
             // Serialize fields
             for (DownsampleFieldSerializer fieldProducer : groupedProducers) {
                 fieldProducer.write(builder);
+
+                if (fieldProducer instanceof DimensionFieldProducer dimensionFieldProducer) {
+                    if (indexRouting.matchesField(dimensionFieldProducer.name())) {
+                        BytesRef value = new BytesRef(dimensionFieldProducer.getValue().toString());
+                        routingBuilder.addMatching(dimensionFieldProducer.name(), value);
+                    }
+                }
             }
 
             if (dimensions.length == 0) {
@@ -677,7 +712,11 @@ class DownsampleShardIndexer {
             }
 
             builder.endObject();
-            return builder;
+            indexRequest.setSource(builder);
+            String routing = TimeSeriesRoutingHashFieldMapper.encode(routingBuilder.buildHash(() -> {
+                return 0;
+            }));;
+            indexRequest.setRouting(routing);
         }
 
         public long timestamp() {

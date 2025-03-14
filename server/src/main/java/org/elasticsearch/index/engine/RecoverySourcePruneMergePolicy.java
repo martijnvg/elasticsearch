@@ -10,6 +10,8 @@
 package org.elasticsearch.index.engine;
 
 import org.apache.lucene.codecs.DocValuesProducer;
+import org.apache.lucene.codecs.FieldsProducer;
+import org.apache.lucene.codecs.PointsReader;
 import org.apache.lucene.codecs.StoredFieldsReader;
 import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.index.CodecReader;
@@ -20,10 +22,12 @@ import org.apache.lucene.index.FilterNumericDocValues;
 import org.apache.lucene.index.MergePolicy;
 import org.apache.lucene.index.NumericDocValues;
 import org.apache.lucene.index.OneMergeWrappingMergePolicy;
+import org.apache.lucene.index.PointValues;
 import org.apache.lucene.index.SortedDocValues;
 import org.apache.lucene.index.SortedNumericDocValues;
 import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.index.StoredFieldVisitor;
+import org.apache.lucene.index.Terms;
 import org.apache.lucene.search.ConjunctionUtils;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
@@ -35,10 +39,13 @@ import org.apache.lucene.util.BitSet;
 import org.apache.lucene.util.BitSetIterator;
 import org.elasticsearch.core.Nullable;
 import org.elasticsearch.index.mapper.IdFieldMapper;
+import org.elasticsearch.index.mapper.SeqNoFieldMapper;
+import org.elasticsearch.index.mapper.SourceFieldMapper;
 import org.elasticsearch.search.internal.FilterStoredFieldVisitor;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.function.Supplier;
 
 final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
@@ -47,13 +54,21 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
         String pruneNumericDVFieldName,
         boolean pruneIdField,
         Supplier<Query> retainSourceQuerySupplier,
+        Supplier<Boolean> readOnly,
         MergePolicy in
     ) {
         super(in, toWrap -> new OneMerge(toWrap.segments) {
             @Override
             public CodecReader wrapForMerge(CodecReader reader) throws IOException {
                 CodecReader wrapped = toWrap.wrapForMerge(reader);
-                return wrapReader(pruneStoredFieldName, pruneNumericDVFieldName, pruneIdField, wrapped, retainSourceQuerySupplier);
+                return wrapReader(
+                    pruneStoredFieldName,
+                    pruneNumericDVFieldName,
+                    pruneIdField,
+                    wrapped,
+                    retainSourceQuerySupplier,
+                    readOnly
+                );
             }
         });
     }
@@ -63,8 +78,13 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
         String pruneNumericDVFieldName,
         boolean pruneIdField,
         CodecReader reader,
-        Supplier<Query> retainSourceQuerySupplier
+        Supplier<Query> retainSourceQuerySupplier,
+        Supplier<Boolean> readOnly
     ) throws IOException {
+        if (readOnly.get() && pruneIdField) {
+            return new PruneRecoverySourceIdAndSeqNo(reader);
+        }
+
         NumericDocValues recoverySource = reader.getNumericDocValues(pruneNumericDVFieldName);
         if (recoverySource == null || recoverySource.nextDoc() == DocIdSetIterator.NO_MORE_DOCS) {
             return reader; // early terminate - nothing to do here since non of the docs has a recovery source anymore.
@@ -89,6 +109,163 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
             );
         } else {
             return new SourcePruningFilterCodecReader(pruneStoredFieldName, pruneNumericDVFieldName, pruneIdField, reader, null);
+        }
+    }
+
+    static class PruneRecoverySourceIdAndSeqNo extends FilterCodecReader {
+
+        PruneRecoverySourceIdAndSeqNo(CodecReader in) {
+            super(in);
+        }
+
+        @Override
+        public FieldsProducer getPostingsReader() {
+            var delegate = super.getPostingsReader();
+            return new FieldsProducer() {
+                @Override
+                public void close() throws IOException {
+                    delegate.close();
+                }
+
+                @Override
+                public void checkIntegrity() throws IOException {
+                    delegate.checkIntegrity();
+                }
+
+                @Override
+                public Iterator<String> iterator() {
+                    return delegate.iterator();
+                }
+
+                @Override
+                public Terms terms(String field) throws IOException {
+                    if (IdFieldMapper.NAME.equals(field)) {
+                        return null;
+                    }
+                    return delegate.terms(field);
+                }
+
+                @Override
+                public int size() {
+                    return -1;
+                }
+            };
+        }
+
+        @Override
+        public DocValuesProducer getDocValuesReader() {
+            var delegate = super.getDocValuesReader();
+            return new FilterDocValuesProducer(delegate) {
+
+                @Override
+                public NumericDocValues getNumeric(FieldInfo field) throws IOException {
+                    var delegateDV = delegate.getNumeric(field);
+                    if (SeqNoFieldMapper.NAME.equals(field.getName())) {
+                        return new Empty(delegateDV);
+                    }
+                    if (SourceFieldMapper.RECOVERY_SOURCE_NAME.equals(field.getName())) {
+                        return new Empty(delegateDV);
+                    }
+                    if (SourceFieldMapper.RECOVERY_SOURCE_SIZE_NAME.equals(field.getName())) {
+                        return new Empty(delegateDV);
+                    }
+                    return delegateDV;
+                }
+
+                private static class Empty extends FilterNumericDocValues {
+
+                    private Empty(NumericDocValues in) {
+                        super(in);
+                    }
+
+                    @Override
+                    public int nextDoc() throws IOException {
+                        return DocIdSetIterator.NO_MORE_DOCS;
+                    }
+
+                    @Override
+                    public int advance(int target) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public boolean advanceExact(int target) {
+                        throw new UnsupportedOperationException();
+                    }
+                };
+            };
+        }
+
+        @Override
+        public PointsReader getPointsReader() {
+            var delegate = super.getPointsReader();
+            return new PointsReader() {
+                @Override
+                public void checkIntegrity() throws IOException {
+                    delegate.checkIntegrity();
+                }
+
+                @Override
+                public PointValues getValues(String field) throws IOException {
+                    if (SeqNoFieldMapper.NAME.equals(field)) {
+                        return null;
+                    }
+                    return delegate.getValues(field);
+                }
+
+                @Override
+                public void close() throws IOException {
+                    delegate.close();
+                }
+            };
+        }
+
+        @Override
+        public StoredFieldsReader getFieldsReader() {
+            return new PruneRecoverSourceAndId(super.getFieldsReader());
+        }
+
+        @Override
+        public CacheHelper getCoreCacheHelper() {
+            return null;
+        }
+
+        @Override
+        public CacheHelper getReaderCacheHelper() {
+            return null;
+        }
+
+        static class PruneRecoverSourceAndId extends FilterStoredFieldsReader {
+
+            PruneRecoverSourceAndId(StoredFieldsReader fieldsReader) {
+                super(fieldsReader);
+            }
+
+            @Override
+            public void document(int docID, StoredFieldVisitor visitor) throws IOException {
+                super.document(docID, new FilterStoredFieldVisitor(visitor) {
+                    @Override
+                    public Status needsField(FieldInfo fieldInfo) throws IOException {
+                        if (SourceFieldMapper.RECOVERY_SOURCE_NAME.equals(fieldInfo.getName())) {
+                            return Status.NO;
+                        }
+                        if (IdFieldMapper.NAME.equals(fieldInfo.getName())) {
+                            return Status.NO;
+                        }
+                        return super.needsField(fieldInfo);
+                    }
+                });
+            }
+
+            @Override
+            public StoredFieldsReader getMergeInstance() {
+                return new PruneRecoverSourceAndId(in.getMergeInstance());
+            }
+
+            @Override
+            public StoredFieldsReader clone() {
+                return new PruneRecoverSourceAndId(in.clone());
+            }
         }
     }
 
@@ -177,81 +354,6 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
             return null;
         }
 
-        private static class FilterDocValuesProducer extends DocValuesProducer {
-            private final DocValuesProducer in;
-
-            FilterDocValuesProducer(DocValuesProducer in) {
-                this.in = in;
-            }
-
-            @Override
-            public NumericDocValues getNumeric(FieldInfo field) throws IOException {
-                return in.getNumeric(field);
-            }
-
-            @Override
-            public BinaryDocValues getBinary(FieldInfo field) throws IOException {
-                return in.getBinary(field);
-            }
-
-            @Override
-            public SortedDocValues getSorted(FieldInfo field) throws IOException {
-                return in.getSorted(field);
-            }
-
-            @Override
-            public SortedNumericDocValues getSortedNumeric(FieldInfo field) throws IOException {
-                return in.getSortedNumeric(field);
-            }
-
-            @Override
-            public SortedSetDocValues getSortedSet(FieldInfo field) throws IOException {
-                return in.getSortedSet(field);
-            }
-
-            @Override
-            public DocValuesSkipper getSkipper(FieldInfo field) throws IOException {
-                return in.getSkipper(field);
-            }
-
-            @Override
-            public void checkIntegrity() throws IOException {
-                in.checkIntegrity();
-            }
-
-            @Override
-            public void close() throws IOException {
-                in.close();
-            }
-        }
-
-        private abstract static class FilterStoredFieldsReader extends StoredFieldsReader {
-
-            protected final StoredFieldsReader in;
-
-            FilterStoredFieldsReader(StoredFieldsReader fieldsReader) {
-                this.in = fieldsReader;
-            }
-
-            @Override
-            public void close() throws IOException {
-                in.close();
-            }
-
-            @Override
-            public void document(int docID, StoredFieldVisitor visitor) throws IOException {
-                in.document(docID, visitor);
-            }
-
-            @Override
-            public abstract StoredFieldsReader clone();
-
-            @Override
-            public void checkIntegrity() throws IOException {
-                in.checkIntegrity();
-            }
-        }
-
         private static class RecoverySourcePruningStoredFieldsReader extends FilterStoredFieldsReader {
 
             private final BitSet recoverySourceToKeep;
@@ -306,6 +408,81 @@ final class RecoverySourcePruneMergePolicy extends OneMergeWrappingMergePolicy {
                 return new RecoverySourcePruningStoredFieldsReader(in.clone(), recoverySourceToKeep, recoverySourceField, pruneIdField);
             }
 
+        }
+    }
+
+    static class FilterDocValuesProducer extends DocValuesProducer {
+        private final DocValuesProducer in;
+
+        FilterDocValuesProducer(DocValuesProducer in) {
+            this.in = in;
+        }
+
+        @Override
+        public NumericDocValues getNumeric(FieldInfo field) throws IOException {
+            return in.getNumeric(field);
+        }
+
+        @Override
+        public BinaryDocValues getBinary(FieldInfo field) throws IOException {
+            return in.getBinary(field);
+        }
+
+        @Override
+        public SortedDocValues getSorted(FieldInfo field) throws IOException {
+            return in.getSorted(field);
+        }
+
+        @Override
+        public SortedNumericDocValues getSortedNumeric(FieldInfo field) throws IOException {
+            return in.getSortedNumeric(field);
+        }
+
+        @Override
+        public SortedSetDocValues getSortedSet(FieldInfo field) throws IOException {
+            return in.getSortedSet(field);
+        }
+
+        @Override
+        public DocValuesSkipper getSkipper(FieldInfo field) throws IOException {
+            return in.getSkipper(field);
+        }
+
+        @Override
+        public void checkIntegrity() throws IOException {
+            in.checkIntegrity();
+        }
+
+        @Override
+        public void close() throws IOException {
+            in.close();
+        }
+    }
+
+    abstract static class FilterStoredFieldsReader extends StoredFieldsReader {
+
+        protected final StoredFieldsReader in;
+
+        FilterStoredFieldsReader(StoredFieldsReader fieldsReader) {
+            this.in = fieldsReader;
+        }
+
+        @Override
+        public void close() throws IOException {
+            in.close();
+        }
+
+        @Override
+        public void document(int docID, StoredFieldVisitor visitor) throws IOException {
+            in.document(docID, visitor);
+        }
+
+        @Override
+        public abstract StoredFieldsReader clone();
+
+        @Override
+        public void checkIntegrity() throws IOException {
+            in.checkIntegrity();
         }
     }
 }

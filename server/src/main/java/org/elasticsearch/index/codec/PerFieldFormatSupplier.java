@@ -14,6 +14,7 @@ import org.apache.lucene.codecs.KnnVectorsFormat;
 import org.apache.lucene.codecs.PostingsFormat;
 import org.apache.lucene.codecs.lucene90.Lucene90DocValuesFormat;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat;
+import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.index.IndexMode;
 import org.elasticsearch.index.IndexSettings;
@@ -92,6 +93,7 @@ public class PerFieldFormatSupplier {
             // can speed this up significantly.
             return indexSettings.getMode() == IndexMode.TIME_SERIES
                 && IdFieldMapper.NAME.equals(field)
+                && IndexMetadata.INDEX_BLOCKS_WRITE_SETTING.get(indexSettings.getSettings()) == false
                 && IndexSettings.BLOOM_FILTER_ID_FIELD_ENABLED_SETTING.get(indexSettings.getSettings());
         } else {
             return IdFieldMapper.NAME.equals(field) && IndexSettings.BLOOM_FILTER_ID_FIELD_ENABLED_SETTING.get(indexSettings.getSettings());

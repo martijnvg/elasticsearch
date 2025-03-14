@@ -46,6 +46,7 @@ import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.support.PlainActionFuture;
 import org.elasticsearch.action.support.SubscribableListener;
 import org.elasticsearch.cluster.metadata.DataStream;
+import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.cluster.service.ClusterApplierService;
 import org.elasticsearch.common.ReferenceDocs;
 import org.elasticsearch.common.Strings;
@@ -2711,6 +2712,8 @@ public class InternalEngine extends Engine {
                 : SourceFieldMapper.RECOVERY_SOURCE_NAME,
             engineConfig.getIndexSettings().getMode() == IndexMode.TIME_SERIES,
             softDeletesPolicy::getRetentionQuery,
+            () -> engineConfig.getIndexSettings().getMode() == IndexMode.TIME_SERIES
+                && IndexMetadata.APIBlock.WRITE.setting().get(engineConfig.getIndexSettings().getSettings()),
             new SoftDeletesRetentionMergePolicy(
                 Lucene.SOFT_DELETES_FIELD,
                 softDeletesPolicy::getRetentionQuery,

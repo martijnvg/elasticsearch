@@ -70,7 +70,7 @@ public enum LuceneFilesExtensions {
     // Temporary Lucene file
     // These files are short-lived, usually fit in the page cache, and sometimes accessed in a random access fashion (e.g. stored fields
     // flushes when index sorting is enabled), which mmap handles more efficiently than niofs.
-    TMP("tmp", "Temporary File", false, true),
+    TMP("tmp", "Temporary File", false, false),
     TVD("tvd", "Term Vector Documents", false, false),
     TVF("tvf", "Term Vector Fields", false, false),
     TVM("tvm", "Term Vector Metadata", true, false),

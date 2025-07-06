@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.Stack;
@@ -70,24 +71,20 @@ public abstract class FallbackSyntheticSourceBlockLoader implements BlockLoader 
         throw new UnsupportedOperationException();
     }
 
-    private record IgnoredSourceRowStrideReader<T>(String fieldName, Reader<T> reader) implements RowStrideReader {
-        @Override
-        public void read(int docId, StoredFields storedFields, Builder builder) throws IOException {
-            var ignoredSource = storedFields.storedFields().get(IgnoredSourceFieldMapper.NAME);
-            if (ignoredSource == null) {
-                builder.appendNull();
-                return;
-            }
+    private static final class IgnoredSourceRowStrideReader<T> implements RowStrideReader {
+        private final String fieldName;
+        private final Reader<T> reader;
+        private final Set<String> fieldNames;
 
-            Map<String, List<IgnoredSourceFieldMapper.NameValue>> valuesForFieldAndParents = new HashMap<>();
-
+        private IgnoredSourceRowStrideReader(String fieldName, Reader<T> reader) {
+            this.fieldName = fieldName;
+            this.reader = reader;
             // Contains name of the field and all its parents
-            Set<String> fieldNames = new HashSet<>() {
+            this.fieldNames = new HashSet<>() {
                 {
                     add("_doc");
                 }
             };
-
             var current = new StringBuilder();
             for (String part : fieldName.split("\\.")) {
                 if (current.isEmpty() == false) {
@@ -96,11 +93,21 @@ public abstract class FallbackSyntheticSourceBlockLoader implements BlockLoader 
                 current.append(part);
                 fieldNames.add(current.toString());
             }
+        }
 
+        @Override
+        public void read(int docId, StoredFields storedFields, Builder builder) throws IOException {
+            var ignoredSource = storedFields.storedFields().get(IgnoredSourceFieldMapper.NAME);
+            if (ignoredSource == null) {
+                builder.appendNull();
+                return;
+            }
+
+            Map<String, IgnoredSourceFieldMapper.NameValue> valuesForFieldAndParents = new HashMap<>();
             for (Object value : ignoredSource) {
                 IgnoredSourceFieldMapper.NameValue nameValue = IgnoredSourceFieldMapper.decode(value);
                 if (fieldNames.contains(nameValue.name())) {
-                    valuesForFieldAndParents.computeIfAbsent(nameValue.name(), k -> new ArrayList<>()).add(nameValue);
+                    valuesForFieldAndParents.putIfAbsent(nameValue.name(), nameValue);
                 }
             }
 
@@ -130,41 +137,35 @@ public abstract class FallbackSyntheticSourceBlockLoader implements BlockLoader 
             }
         }
 
-        private void readFromFieldValue(List<IgnoredSourceFieldMapper.NameValue> nameValues, List<T> blockValues) throws IOException {
-            if (nameValues.isEmpty()) {
+        private void readFromFieldValue(IgnoredSourceFieldMapper.NameValue nameValue, List<T> blockValues) throws IOException {
+            // Leaf field is stored directly (not as a part of a parent object), let's try to decode it.
+            Optional<Object> singleValue = XContentDataHelper.decode(nameValue.value());
+            if (singleValue.isPresent()) {
+                reader.convertValue(singleValue.get(), blockValues);
                 return;
             }
 
-            for (var nameValue : nameValues) {
-                // Leaf field is stored directly (not as a part of a parent object), let's try to decode it.
-                Optional<Object> singleValue = XContentDataHelper.decode(nameValue.value());
-                if (singleValue.isPresent()) {
-                    reader.convertValue(singleValue.get(), blockValues);
-                    continue;
-                }
+            // We have a value for this field but it's an array or an object
+            var type = XContentDataHelper.decodeType(nameValue.value());
+            assert type.isPresent();
 
-                // We have a value for this field but it's an array or an object
-                var type = XContentDataHelper.decodeType(nameValue.value());
-                assert type.isPresent();
-
-                try (
-                    XContentParser parser = type.get()
-                        .xContent()
-                        .createParser(
-                            XContentParserConfiguration.EMPTY,
-                            nameValue.value().bytes,
-                            nameValue.value().offset + 1,
-                            nameValue.value().length - 1
-                        )
-                ) {
-                    parser.nextToken();
-                    parseWithReader(parser, blockValues);
-                }
+            try (
+                XContentParser parser = type.get()
+                    .xContent()
+                    .createParser(
+                        XContentParserConfiguration.EMPTY,
+                        nameValue.value().bytes,
+                        nameValue.value().offset + 1,
+                        nameValue.value().length - 1
+                    )
+            ) {
+                parser.nextToken();
+                parseWithReader(parser, blockValues);
             }
         }
 
         private void readFromParentValue(
-            Map<String, List<IgnoredSourceFieldMapper.NameValue>> valuesForFieldAndParents,
+            Map<String, IgnoredSourceFieldMapper.NameValue> valuesForFieldAndParents,
             List<T> blockValues
         ) throws IOException {
             if (valuesForFieldAndParents.isEmpty()) {
@@ -174,11 +175,8 @@ public abstract class FallbackSyntheticSourceBlockLoader implements BlockLoader 
             // If a parent object is stored at a particular level its children won't be stored.
             // So we should only ever have one parent here.
             assert valuesForFieldAndParents.size() == 1 : "_ignored_source field contains multiple levels of the same object";
-            var parentValues = valuesForFieldAndParents.values().iterator().next();
-
-            for (var nameValue : parentValues) {
-                parseFieldFromParent(nameValue, blockValues);
-            }
+            var parentValue = valuesForFieldAndParents.values().iterator().next();
+            parseFieldFromParent(parentValue, blockValues);
         }
 
         private void parseFieldFromParent(IgnoredSourceFieldMapper.NameValue nameValue, List<T> blockValues) throws IOException {
@@ -243,6 +241,33 @@ public abstract class FallbackSyntheticSourceBlockLoader implements BlockLoader 
         public boolean canReuse(int startingDocID) {
             return true;
         }
+
+        public String fieldName() {
+            return fieldName;
+        }
+
+        public Reader<T> reader() {
+            return reader;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) return true;
+            if (obj == null || obj.getClass() != this.getClass()) return false;
+            var that = (IgnoredSourceRowStrideReader) obj;
+            return Objects.equals(this.fieldName, that.fieldName) && Objects.equals(this.reader, that.reader);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(fieldName, reader);
+        }
+
+        @Override
+        public String toString() {
+            return "IgnoredSourceRowStrideReader[" + "fieldName=" + fieldName + ", " + "reader=" + reader + ']';
+        }
+
     }
 
     /**

@@ -516,7 +516,7 @@ public final class KeywordFieldMapper extends FieldMapper {
         }
 
         private boolean shouldUseStandardSkipper() {
-            return hasDocValues.get()
+            return docValuesParameters.getValue().enabled()
                 && indexed.get() == false
                 && indexSettings.getIndexVersionCreated().onOrAfter(IndexVersions.STANDARD_INDEXES_USE_SKIPPERS)
                 && indexSettings.useDocValuesSkipper();

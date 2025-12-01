@@ -13,6 +13,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
+import org.apache.lucene.document.BinaryDocValuesField;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FieldType;
 import org.apache.lucene.document.InvertableType;
@@ -63,7 +64,7 @@ import org.elasticsearch.index.fielddata.StoredFieldSortedBinaryIndexFieldData;
 import org.elasticsearch.index.fielddata.plain.BytesBinaryIndexFieldData;
 import org.elasticsearch.index.fielddata.plain.SortedSetOrdinalsIndexFieldData;
 import org.elasticsearch.index.mapper.blockloader.BlockLoaderFunctionConfig;
-import org.elasticsearch.index.mapper.blockloader.docvalues.BytesRefsFromCustomBinaryBlockLoader;
+import org.elasticsearch.index.mapper.blockloader.docvalues.BytesRefsFromBinaryBlockLoader;
 import org.elasticsearch.index.mapper.blockloader.docvalues.BytesRefsFromOrdsBlockLoader;
 import org.elasticsearch.index.mapper.blockloader.docvalues.fn.MvMaxBytesRefsFromOrdsBlockLoader;
 import org.elasticsearch.index.mapper.blockloader.docvalues.fn.MvMinBytesRefsFromOrdsBlockLoader;
@@ -452,7 +453,7 @@ public final class KeywordFieldMapper extends FieldMapper {
             String offsetsFieldName = getOffsetsFieldName(
                 context,
                 indexSettings.sourceKeepMode(),
-                fieldtype.docValuesType() == DocValuesType.SORTED_SET,
+                fieldtype.docValuesType() != DocValuesType.NONE,
                 stored.getValue(),
                 this,
                 indexCreatedVersion,
@@ -480,8 +481,13 @@ public final class KeywordFieldMapper extends FieldMapper {
             fieldtype.setStored(this.stored.getValue());
 
             DocValuesParameter.Values docValuesParameters = this.docValuesParameters.get();
-            if (docValuesParameters.enabled() && docValuesParameters.cardinality() == DocValuesParameter.Values.Cardinality.LOW) {
-                fieldtype.setDocValuesType(DocValuesType.SORTED_SET);
+            if (docValuesParameters.enabled()) {
+                if (docValuesParameters.cardinality() == DocValuesParameter.Values.Cardinality.LOW) {
+                    fieldtype.setDocValuesType(DocValuesType.SORTED_SET);
+                } else {
+                    fieldtype.setDocValuesType(DocValuesType.BINARY);
+                    fieldtype.setDocValuesSkipIndexType(DocValuesSkipIndexType.NONE);
+                }
             } else {
                 fieldtype.setDocValuesType(DocValuesType.NONE);
             }
@@ -853,7 +859,7 @@ public final class KeywordFieldMapper extends FieldMapper {
 
                 if (storedInBinaryDocValues()) {
                     // TODO: Support the function-specific optimizations
-                    return new BytesRefsFromCustomBinaryBlockLoader(binaryDocValuesName());
+                    return new BytesRefsFromBinaryBlockLoader(binaryDocValuesName());
                 }
 
                 if (cfg == null) {
@@ -1365,17 +1371,8 @@ public final class KeywordFieldMapper extends FieldMapper {
         }
 
         if (fieldType().storedInBinaryDocValues()) {
-            assert fieldType.docValuesType() == DocValuesType.NONE;
-            MultiValuedBinaryDocValuesField field = (MultiValuedBinaryDocValuesField) context.doc()
-                .getField(fieldType().binaryDocValuesName());
-            if (field == null) {
-                field = new MultiValuedBinaryDocValuesField(
-                    fieldType().binaryDocValuesName(),
-                    MultiValuedBinaryDocValuesField.Ordering.NATURAL
-                );
-                context.doc().addWithKey(fieldType().binaryDocValuesName(), field);
-            }
-            field.add(binaryValue);
+            assert fieldType.docValuesType() == DocValuesType.BINARY;
+            context.doc().add(new BinaryDocValuesField(fieldType().binaryDocValuesName(), binaryValue));
         }
 
         // Skip adding the field if we're using binary doc values (cardinality is high) and the field is neither indexed nor stored.
@@ -1507,7 +1504,7 @@ public final class KeywordFieldMapper extends FieldMapper {
             } else {
                 assert offsetsFieldName == null;
                 assert indexSettings.sourceKeepMode() == SourceKeepMode.NONE;
-                layers.add(new BinaryDocValuesSyntheticFieldLoaderLayer(fieldType().binaryDocValuesName()));
+                layers.add(new SingletonBinaryDocValuesSyntheticFieldLoaderLayer(fieldType().binaryDocValuesName()));
             }
         }
 

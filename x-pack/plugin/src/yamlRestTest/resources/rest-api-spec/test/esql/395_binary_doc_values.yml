@@ -1,0 +1,47 @@
+---
+setup:
+  - requires:
+      cluster_features: ["mapper.keyword.store_high_cardinality_in_binary_doc_values"]
+      reason: "testing binary doc values search"
+
+  - do:
+      indices.create:
+        index:  test
+        body:
+          mappings:
+            dynamic: false
+            properties:
+              keyword:
+                type: keyword
+                index: false
+                doc_values:
+                  cardinality: high
+
+  - do:
+      index:
+        index: test
+        id: "1"
+        body:
+          keyword: "key1"
+
+  - do:
+      index:
+        index: test
+        id: "2"
+        body:
+          keyword: "key2"
+  - do:
+      indices.refresh: {}
+
+---
+"Test loading high cardinality keyword values using ESQL":
+  - do:
+      esql.query:
+        body:
+          query: 'FROM test | KEEP keyword | LIMIT 10'
+
+  - match: {columns.0.name: "keyword"}
+  - match: {columns.0.type: "keyword"}
+
+  - match: {values.0.0: "key1"}
+  - match: {values.1.0: "key2"}

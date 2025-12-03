@@ -10,6 +10,7 @@
 package org.elasticsearch.index.fielddata.plain;
 
 import org.apache.lucene.index.BinaryDocValues;
+import org.elasticsearch.index.fielddata.FieldData;
 import org.elasticsearch.index.fielddata.LeafFieldData;
 import org.elasticsearch.index.fielddata.MultiValuedSortedBinaryDocValues;
 import org.elasticsearch.index.fielddata.SortedBinaryDocValues;
@@ -33,7 +34,7 @@ public final class MultiValuedBinaryDVLeafFieldData implements LeafFieldData {
 
     @Override
     public SortedBinaryDocValues getBytesValues() {
-        return new MultiValuedSortedBinaryDocValues(values);
+        return FieldData.singleton(values);
     }
 
     @Override

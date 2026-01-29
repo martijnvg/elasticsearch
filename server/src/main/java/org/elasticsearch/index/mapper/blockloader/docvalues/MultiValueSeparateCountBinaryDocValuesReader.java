@@ -42,6 +42,33 @@ public final class MultiValueSeparateCountBinaryDocValuesReader {
         builder.endPositionEntry();
     }
 
+    public void readMin(BytesRef bytes, long count, BlockLoader.BytesRefBuilder builder) throws IOException {
+        if (count == 1) {
+            builder.appendBytesRef(bytes);
+            return;
+        }
+
+        in.reset(bytes.bytes, bytes.offset, bytes.length);
+        BytesRef min = null;
+        for (int v = 0; v < count; v++) {
+            scratch.length = in.readVInt();
+            scratch.offset = in.getPosition();
+            scratch.bytes = bytes.bytes;
+            in.setPosition(scratch.offset + scratch.length);
+            if (min == null || scratch.compareTo(min) < 0) {
+                if (min == null) {
+                    min = new BytesRef(new byte[scratch.length]);
+                } else if (min.bytes.length < scratch.length) {
+                    min.bytes = new byte[scratch.length];
+                }
+                System.arraycopy(scratch.bytes, scratch.offset, min.bytes, 0, scratch.length);
+                min.length = scratch.length;
+                min.offset = 0;
+            }
+        }
+        builder.appendBytesRef(min);
+    }
+
     public boolean match(BytesRef bytes, long count, Predicate<BytesRef> predicate) throws IOException {
         if (count == 1) {
             return predicate.test(bytes);

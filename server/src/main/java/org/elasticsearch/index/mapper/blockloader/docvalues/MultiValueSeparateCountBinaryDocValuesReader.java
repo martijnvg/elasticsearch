@@ -58,6 +58,19 @@ public final class MultiValueSeparateCountBinaryDocValuesReader {
         return false;
     }
 
+    public BytesRef min(BytesRef bytes, long count) throws IOException {
+        scratch.bytes = bytes.bytes;
+        in.reset(bytes.bytes, bytes.offset, bytes.length);
+        BytesRef min = null;
+        for (int v = 0; v < count; v++) {
+            initializeScratch();
+            if (min == null || scratch.compareTo(min) < 0) {
+                min = BytesRef.deepCopyOf(scratch);
+            }
+        }
+        return min;
+    }
+
     private void initializeScratch() throws IOException {
         scratch.length = in.readVInt();
         scratch.offset = in.getPosition();

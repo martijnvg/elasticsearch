@@ -58,6 +58,40 @@ public final class MultiValueSeparateCountBinaryDocValuesReader {
         return false;
     }
 
+    /**
+     * Reads all values from the binary doc values and returns the minimum value.
+     *
+     * @param bytes the binary doc values bytes
+     * @param count the number of values encoded in the bytes
+     * @return the minimum BytesRef value, or null if count is 0
+     * @throws IOException if reading fails
+     */
+    public BytesRef readMin(BytesRef bytes, long count) throws IOException {
+        if (count == 1) {
+            return bytes;
+        }
+        if (count == 0) {
+            return null;
+        }
+
+        scratch.bytes = bytes.bytes;
+        in.reset(bytes.bytes, bytes.offset, bytes.length);
+
+        // Read the first value as the initial minimum
+        initializeScratch();
+        BytesRef min = BytesRef.deepCopyOf(scratch);
+
+        // Compare with remaining values
+        for (int v = 1; v < count; v++) {
+            initializeScratch();
+            if (scratch.compareTo(min) < 0) {
+                min = BytesRef.deepCopyOf(scratch);
+            }
+        }
+
+        return min;
+    }
+
     private void initializeScratch() throws IOException {
         scratch.length = in.readVInt();
         scratch.offset = in.getPosition();

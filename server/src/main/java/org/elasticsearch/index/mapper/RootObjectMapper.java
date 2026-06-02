@@ -190,6 +190,7 @@ public class RootObjectMapper extends ObjectMapper {
     private final Explicit<Boolean> dateDetection;
     private final Explicit<Boolean> numericDetection;
     private final Explicit<DynamicTemplate[]> dynamicTemplates;
+    private final boolean hasObjectTemplates;
     private final Map<String, RuntimeField> runtimeFields;
     private final RootObjectMapperNamespaceValidator namespaceValidator;
 
@@ -210,10 +211,26 @@ public class RootObjectMapper extends ObjectMapper {
         super(name, name, enabled, subobjects, sourceKeepMode, dynamic, mappers);
         this.runtimeFields = runtimeFields;
         this.dynamicTemplates = dynamicTemplates;
+        this.hasObjectTemplates = hasObjectTemplates(dynamicTemplates.value());
         this.dynamicDateTimeFormatters = dynamicDateTimeFormatters;
         this.dateDetection = dateDetection;
         this.numericDetection = numericDetection;
         this.namespaceValidator = namespaceValidator == null ? new DefaultRootObjectMapperNamespaceValidator() : namespaceValidator;
+    }
+
+    private static boolean hasObjectTemplates(DynamicTemplate[] templates) {
+        for (DynamicTemplate template : templates) {
+            for (DynamicTemplate.XContentFieldType ft : template.getXContentFieldTypes()) {
+                if (ft == DynamicTemplate.XContentFieldType.OBJECT) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    boolean hasObjectTemplates() {
+        return hasObjectTemplates;
     }
 
     @Override

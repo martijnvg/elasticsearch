@@ -254,6 +254,9 @@ final class DynamicFieldsBuilder {
     }
 
     private static Mapper.Builder findTemplateBuilderForObject(DocumentParserContext context, String name) {
+        if (context.root().hasObjectTemplates() == false) {
+            return null;
+        }
         DynamicTemplate.XContentFieldType matchType = DynamicTemplate.XContentFieldType.OBJECT;
         DynamicTemplate dynamicTemplate = context.findDynamicTemplate(name, matchType);
         if (dynamicTemplate == null) {

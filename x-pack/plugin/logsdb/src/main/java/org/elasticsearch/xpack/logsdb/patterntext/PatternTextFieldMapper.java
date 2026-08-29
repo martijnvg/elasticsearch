@@ -373,7 +373,7 @@ public class PatternTextFieldMapper extends FieldMapper {
             && useBinaryDocValueArgs            // only the binary-doc-values args encoding is handled
             && useBinaryDocValuesForRawText     // always true in columnar mode; required for correctness
             && copyTo().copyToFields().isEmpty()
-            && multiFields().iterator().hasNext() == false
+            && multiFieldsSupportColumnarParse(settings)
             && fieldType().isWithinMultiField() == false;
     }
 
@@ -398,7 +398,7 @@ public class PatternTextFieldMapper extends FieldMapper {
      *         which raises the per-doc error with the correct {@code on_failure} behaviour)
      */
     @Override
-    public void mapColumnBatch(BatchMappingContext ctx, EscfColumn source) {
+    protected void doMapColumnBatch(BatchMappingContext ctx, EscfColumn source) {
         final int docCount = ctx.docCount();
         // retainValues=false: every value is consumed within one loop iteration, before the cursor advances.
         final ObjectTupleCursor<BytesRef> cursor = EscfColumnTransforms.utf8Cursor(source, false);

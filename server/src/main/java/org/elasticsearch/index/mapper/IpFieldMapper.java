@@ -830,7 +830,7 @@ public class IpFieldMapper extends FieldMapper {
             && stored == false
             && hasScript() == false
             && copyTo().copyToFields().isEmpty()
-            && multiFields().iterator().hasNext() == false
+            && multiFieldsSupportColumnarParse(indexSettings)
             && fieldType().isDimension() == false
             && indexSettings.getIndexVersionCreated().isLegacyIndexVersion() == false;
     }
@@ -881,7 +881,7 @@ public class IpFieldMapper extends FieldMapper {
     }
 
     @Override
-    public void mapColumnBatch(BatchMappingContext ctx, EscfColumn source) {
+    protected void doMapColumnBatch(BatchMappingContext ctx, EscfColumn source) {
         if (fieldType().hasDocValues() == false) {
             return;
         }

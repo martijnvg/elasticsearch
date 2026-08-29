@@ -1272,12 +1272,12 @@ public final class DateFieldMapper extends FieldMapper {
             && docValuesParameters.enabled()
             && hasScript() == false
             && copyTo().copyToFields().isEmpty()
-            && multiFields().iterator().hasNext() == false
+            && multiFieldsSupportColumnarParse(indexSettings)
             && indexSettings.getIndexVersionCreated().isLegacyIndexVersion() == false;
     }
 
     @Override
-    public void mapColumnBatch(BatchMappingContext ctx, EscfColumn source) {
+    protected void doMapColumnBatch(BatchMappingContext ctx, EscfColumn source) {
         final EscfColumnData outData = switch (source.kind()) {
             case EscfColumnKind.STRING -> datesFromStrings(source);
             case EscfColumnKind.LONG -> datesFromLongs(source);

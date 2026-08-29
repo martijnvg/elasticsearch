@@ -772,13 +772,13 @@ public class BooleanFieldMapper extends FieldMapper {
             && docValuesParameters.enabled()
             && hasScript() == false
             && copyTo().copyToFields().isEmpty()
-            && multiFields().iterator().hasNext() == false
+            && multiFieldsSupportColumnarParse(indexSettings)
             && fieldType().isDimension() == false
             && indexSettings.getIndexVersionCreated().isLegacyIndexVersion() == false;
     }
 
     @Override
-    public void mapColumnBatch(BatchMappingContext ctx, EscfColumn source) {
+    protected void doMapColumnBatch(BatchMappingContext ctx, EscfColumn source) {
         switch (source.kind()) {
             case EscfColumnKind.BOOL, EscfColumnKind.STRING -> {
             } // handled below

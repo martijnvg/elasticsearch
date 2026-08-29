@@ -1857,7 +1857,7 @@ public final class FlattenedFieldMapper extends FieldMapper implements PassThrou
      * ({@link #parseCreateField} returns early on {@code VALUE_NULL}; an empty object has no leaves to index).
      */
     @Override
-    public void mapColumnBatch(BatchMappingContext ctx, EscfColumn source) {
+    protected void doMapColumnBatch(BatchMappingContext ctx, EscfColumn source) {
         if (EscfColumnTransforms.allNullOrEmptyObject(source) == false) {
             throw new UnsupportedOperationException(
                 "mapColumnBatch: flattened field ["

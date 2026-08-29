@@ -223,7 +223,8 @@ public class ShardBatchMapperResolveTests extends MapperServiceTestCase {
         assertThat(resolution.columnMappers()[0], instanceOf(IpFieldMapper.class));
     }
 
-    public void testKeywordWithMultiFieldsFallsBack() throws IOException {
+    /** A keyword field with an all-columnar-capable multi-field now stays on the columnar path. */
+    public void testKeywordWithColumnarCompatibleMultiFieldResolves() throws IOException {
         MapperService ms = mapper(mapping(b -> {
             b.startObject("host");
             b.field("type", "keyword");
@@ -232,7 +233,51 @@ public class ShardBatchMapperResolveTests extends MapperServiceTestCase {
             b.endObject();
             b.endObject();
         }));
-        assertNull(ShardBatchMapper.resolveMappers(schemaOf("host"), ms.mappingLookup(), indexSettings));
+        BatchMapperResolution resolution = ShardBatchMapper.resolveMappers(schemaOf("host"), ms.mappingLookup(), indexSettings);
+        assertNotNull("keyword with a keyword sub-field should resolve on the columnar path", resolution);
+        assertThat(resolution.columnMappers()[0], instanceOf(KeywordFieldMapper.class));
+    }
+
+    /** A keyword field with a text sub-field (no columnar support) still falls back. */
+    public void testKeywordWithTextSubFieldFallsBack() throws IOException {
+        MapperService ms = mapper(mapping(b -> {
+            b.startObject("host");
+            b.field("type", "keyword");
+            b.startObject("fields");
+            b.startObject("analyzed").field("type", "text").endObject();
+            b.endObject();
+            b.endObject();
+        }));
+        assertNull(
+            "keyword with a text sub-field should fall back (text has no columnar support)",
+            ShardBatchMapper.resolveMappers(schemaOf("host"), ms.mappingLookup(), indexSettings)
+        );
+    }
+
+    /**
+     * A source batch containing a leaf whose path is a multi-field sub-path (e.g. "host.lower") must fall
+     * back. After multi-field fan-out, the parent dispatches to "host.lower" itself; a second binding
+     * would emit duplicate columns. The isMultiField guard prevents this at resolve time.
+     */
+    public void testMultiFieldSubPathAsLeafFallsBack() throws IOException {
+        MapperService ms = mapper(mapping(b -> {
+            b.startObject("host");
+            b.field("type", "keyword");
+            b.startObject("fields");
+            b.startObject("lower").field("type", "keyword").endObject();
+            b.endObject();
+            b.endObject();
+        }));
+        // A batch whose source contains a literal "host.lower" key — or a batch containing both
+        // "host" and "host.lower" — must fall back to prevent double-emission.
+        assertNull(
+            "a leaf whose path is a multi-field sub-path should force fallback",
+            ShardBatchMapper.resolveMappers(schemaOf("host.lower"), ms.mappingLookup(), indexSettings)
+        );
+        assertNull(
+            "a batch containing both the parent and its multi-field sub-path should fall back",
+            ShardBatchMapper.resolveMappers(schemaOf("host", "host.lower"), ms.mappingLookup(), indexSettings)
+        );
     }
 
     public void testNestedLeafHappyPath() throws IOException {

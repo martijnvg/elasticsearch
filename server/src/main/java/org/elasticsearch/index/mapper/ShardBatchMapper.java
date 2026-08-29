@@ -46,10 +46,11 @@ import java.util.List;
  *     unsupported mapper types, etc. — causes the method to return {@code null}, at which point
  *     {@link ShardBatchIndexer} falls back to the sequential path.</li>
  *     <li>{@link #mapColumnBatch(BulkItemRequest[], SourceBatch, IndexShard, int, int, BatchMapperResolution,
- *     Engine.Operation.Origin, Recycler)} runs per chunk. It invokes each mapper once for the whole chunk — attaching one Lucene
- *     column per batch-wide value (id, source, engine-assigned seq-no/version, ...) via {@link BatchMappingContext}, and assembles
- *     {@link Engine.Index} operations plus the resulting {@link EngineBatch}. After the per-leaf loop, each group mapper is dispatched via
- *     {@link FieldMapper#mapColumnGroupBatch}.</li>
+ *     Engine.Operation.Origin, Recycler)} runs per chunk. It invokes each per-leaf {@link FieldMapper} once for the whole chunk
+ *     via {@link FieldMapper#mapColumnBatch}, which automatically fans out to the mapper's multi-fields (if any) before returning.
+ *     Attaches one Lucene column per batch-wide value (id, source, engine-assigned seq-no/version, ...) via
+ *     {@link BatchMappingContext}, and assembles {@link Engine.Index} operations plus the resulting {@link EngineBatch}.
+ *     After the per-leaf loop, each group mapper is dispatched via {@link FieldMapper#mapColumnGroupBatch}.</li>
  * </ol>
  */
 public final class ShardBatchMapper {
@@ -212,6 +213,19 @@ public final class ShardBatchMapper {
                 return null;
             }
             final FieldMapper fieldMapper = (FieldMapper) resolved;
+            // MappingLookup.collect recurses through FieldMapper.iterator(), which returns multi-fields.
+            // Sub-field mappers are therefore registered under their own full path in fieldMappers, so
+            // a batch leaf named "host.lower" would resolve here to the sub-mapper directly. The row
+            // path (DocumentParser.getLeafMapper → ObjectMapper.getMapper) only consults an object's
+            // direct children — multi-fields are invisible there — so a source leaf literally named
+            // "host.lower" is treated as unmapped on the row path.
+            // To avoid: (a) a latent row/columnar divergence today, and (b) a double-emission bug
+            // once mapColumnBatch fans out to sub-fields (parent dispatches to "host.lower" AND the
+            // leaf is dispatched a second time), reject any leaf that resolves to a multi-field path.
+            if (fullPath.indexOf('.') >= 0 && lookup.isMultiField(fullPath)) {
+                logger.debug("batch indexing disabled: [{}] is a multi-field sub-path; only the parent field leaf is dispatched", fullPath);
+                return null;
+            }
             if (fieldMapper.supportsColumnarParse(indexSettings) == false) {
                 logger.debug(
                     "columnar batch mapping disabled: mapper at [{}] of type [{}] does not support columnar parsing",

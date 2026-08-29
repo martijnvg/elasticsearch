@@ -401,4 +401,115 @@ public class KeywordFieldMapperColumnarCompatibilityTests extends AbstractColumn
             )
         );
     }
+
+    // ----------------------------- multi-field tests -----------------------------
+
+    /**
+     * A keyword parent with a keyword sub-field: both should receive the same raw source value and
+     * emit compatible Lucene fields. The harness fan-out happens inside
+     * {@link KeywordFieldMapper#mapColumnBatch} → {@link FieldMapper#mapColumnBatch} dispatch.
+     */
+    public void testMultiFieldKeywordSubfield() throws IOException {
+        assertColumnarMatchesXContent(mapping(b -> {
+            b.startObject(FIELD).field("type", "keyword");
+            b.startObject("fields");
+            b.startObject("lower").field("type", "keyword").endObject();
+            b.endObject();
+            b.endObject();
+        }),
+            columnarSettings(),
+            batch(
+                "keyword sub-field single and multi value",
+                1L,
+                doc("d1", 1L, "{\"f\":\"hello\"}"),
+                doc("d2", 2L, "{\"f\":[\"alpha\",\"beta\"]}"),
+                doc("d3", 3L, "{}"),
+                doc("d4", 4L, "{\"f\":null}")
+            )
+        );
+    }
+
+    /**
+     * The parent has {@code ignore_above} set, the sub-field does not (different limits).
+     * Docs that exceed the parent's limit should appear in {@code _ignored} for the parent
+     * but not the sub-field, and vice versa. The {@code isWithinMultiField} flag on the
+     * sub-keyword ensures it does not store a fallback column.
+     */
+    public void testMultiFieldDivergentIgnoreAbove() throws IOException {
+        assertColumnarMatchesXContent(mapping(b -> {
+            b.startObject(FIELD).field("type", "keyword").field("ignore_above", 5);
+            b.startObject("fields");
+            b.startObject("full").field("type", "keyword").endObject(); // no ignore_above on sub
+            b.endObject();
+            b.endObject();
+        }),
+            columnarSettings(),
+            batch(
+                "divergent ignore_above parent vs sub",
+                1L,
+                doc("d1", 1L, "{\"f\":\"short\"}"),          // 5 chars — at parent limit, both index
+                doc("d2", 2L, "{\"f\":\"toolong\"}"),          // 7 chars — parent ignores, sub indexes
+                doc("d3", 3L, "{}"),                            // absent
+                doc("d4", 4L, "{\"f\":[\"ok\",\"waytooolong\"]}") // mixed: "ok" indexed everywhere; "waytooolong" ignored by parent only
+            )
+        );
+    }
+
+    /**
+     * Sub-field only has {@code ignore_above}: parent indexes everything, sub-field silently drops
+     * long values and records them in {@code _ignored} under its own path.
+     */
+    public void testMultiFieldIgnoreAboveOnSubFieldOnly() throws IOException {
+        assertColumnarMatchesXContent(mapping(b -> {
+            b.startObject(FIELD).field("type", "keyword");
+            b.startObject("fields");
+            b.startObject("short").field("type", "keyword").field("ignore_above", 4).endObject();
+            b.endObject();
+            b.endObject();
+        }),
+            columnarSettings(),
+            batch(
+                "ignore_above on sub-field only",
+                1L,
+                doc("d1", 1L, "{\"f\":\"hi\"}"),          // both index
+                doc("d2", 2L, "{\"f\":\"toolong\"}"),      // parent indexes; sub drops + records _ignored
+                doc("d3", 3L, "{}")
+            )
+        );
+    }
+
+    /** Two sub-fields on one parent: order independence (harness sorts before comparing). */
+    public void testMultiFieldTwoSubFields() throws IOException {
+        assertColumnarMatchesXContent(mapping(b -> {
+            b.startObject(FIELD).field("type", "keyword");
+            b.startObject("fields");
+            b.startObject("a").field("type", "keyword").endObject();
+            b.startObject("b").field("type", "keyword").endObject();
+            b.endObject();
+            b.endObject();
+        }),
+            columnarSettings(),
+            batch("two sub-fields", 1L, doc("d1", 1L, "{\"f\":\"v1\"}"), doc("d2", 2L, "{\"f\":[\"x\",\"y\"]}"), doc("d3", 3L, "{}"))
+        );
+    }
+
+    /** {@code null_value} on the parent only: the sub-field receives the raw source null, not the replacement. */
+    public void testMultiFieldNullValueOnParentOnly() throws IOException {
+        assertColumnarMatchesXContent(mapping(b -> {
+            b.startObject(FIELD).field("type", "keyword").field("null_value", "NULL");
+            b.startObject("fields");
+            b.startObject("raw").field("type", "keyword").endObject(); // no null_value
+            b.endObject();
+            b.endObject();
+        }),
+            columnarSettings(),
+            batch(
+                "null_value on parent only",
+                1L,
+                doc("d1", 1L, "{\"f\":null}"),      // parent substitutes "NULL"; sub gets nothing
+                doc("d2", 2L, "{\"f\":\"hello\"}"), // both index normally
+                doc("d3", 3L, "{}")
+            )
+        );
+    }
 }

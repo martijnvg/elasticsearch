@@ -249,6 +249,108 @@ public class ShardBatchMapperParseTests extends IndexShardTestCase {
         }
     }
 
+    private static final String DYNAMIC_TRUE_MAPPING = """
+        {
+          "properties": {
+            "known": { "type": "keyword" }
+          }
+        }""";
+
+    /**
+     * An unmapped leaf under the default dynamic=true has no mapper, but a chunk where it never actually
+     * has a value is safe to batch-index — there is nothing to omit, so it behaves exactly like
+     * dynamic=false for that chunk.
+     */
+    public void testUnmappedDynamicLeafAbsentInChunkIsBatchIndexed() throws IOException {
+        IndexShard shard = newShardWithMapping(DYNAMIC_TRUE_MAPPING, COLUMNAR_SETTINGS);
+        try {
+            final BulkItemRequest[] items = { new BulkItemRequest(0, indexRequest("doc1")) };
+            try (SourceBatch batch = EscfEncoder.encode(List.of(doc("known", "hello")), XContentType.JSON)) {
+                EngineBatch result = mapBatch(shard, items, batch);
+                assertNotNull("expected columnar path to succeed when the dynamic leaf has no value", result);
+            }
+        } finally {
+            closeShards(shard);
+        }
+    }
+
+    /**
+     * A chunk where the unmapped dynamic=true leaf actually has a value cannot be batch-indexed — dropping
+     * it would silently lose data the sequential path would dynamically map — so the chunk falls back.
+     */
+    public void testUnmappedDynamicLeafPresentInChunkFallsBack() throws IOException {
+        IndexShard shard = newShardWithMapping(DYNAMIC_TRUE_MAPPING, COLUMNAR_SETTINGS);
+        try {
+            final BulkItemRequest[] items = { new BulkItemRequest(0, indexRequest("doc1")) };
+            try (SourceBatch batch = EscfEncoder.encode(List.of(doc("known", "hello", "unknown", "surprise")), XContentType.JSON)) {
+                assertNull("a chunk where the dynamic leaf has a value must fall back rather than drop it", mapBatch(shard, items, batch));
+            }
+        } finally {
+            closeShards(shard);
+        }
+    }
+
+    /**
+     * The narrowed blast radius this behavior is for: across a two-chunk batch, only the chunk where the
+     * unmapped dynamic leaf actually appears falls back — the earlier chunk, where it never appears, still
+     * takes the fast path.
+     */
+    public void testUnmappedDynamicLeafOnlyFallsBackTheChunkItAppearsIn() throws IOException {
+        IndexShard shard = newShardWithMapping(DYNAMIC_TRUE_MAPPING, COLUMNAR_SETTINGS);
+        try {
+            final BulkItemRequest[] items = {
+                new BulkItemRequest(0, indexRequest("d0")),
+                new BulkItemRequest(1, indexRequest("d1")),
+                new BulkItemRequest(2, indexRequest("d2")),
+                new BulkItemRequest(3, indexRequest("d3")) };
+            try (
+                SourceBatch fullBatch = EscfEncoder.encode(
+                    List.of(
+                        new BytesArray("{\"known\":\"a\"}"),
+                        new BytesArray("{\"known\":\"b\"}"),
+                        new BytesArray("{\"known\":\"c\",\"unknown\":\"surprise\"}"),
+                        new BytesArray("{\"known\":\"d\"}")
+                    ),
+                    XContentType.JSON
+                )
+            ) {
+                final BatchMapperResolution resolution = ShardBatchMapper.resolveMappers(
+                    fullBatch.schema(),
+                    shard.mapperService().mappingLookup(),
+                    shard.indexSettings()
+                );
+                assertNotNull("resolution must succeed — the dynamic leaf is only tentatively ignored", resolution);
+                assertEquals(1, resolution.dynamicUnmappedLeaves().length);
+
+                final EngineBatch chunk1 = ShardBatchMapper.mapColumnBatch(
+                    items,
+                    fullBatch,
+                    shard,
+                    0,
+                    2,
+                    resolution,
+                    Engine.Operation.Origin.PRIMARY,
+                    BytesRefRecycler.NON_RECYCLING_INSTANCE
+                );
+                assertNotNull("chunk1 has no value in the dynamic leaf and must batch-index", chunk1);
+
+                final EngineBatch chunk2 = ShardBatchMapper.mapColumnBatch(
+                    items,
+                    fullBatch,
+                    shard,
+                    2,
+                    4,
+                    resolution,
+                    Engine.Operation.Origin.PRIMARY,
+                    BytesRefRecycler.NON_RECYCLING_INSTANCE
+                );
+                assertNull("chunk2 has a value in the dynamic leaf and must fall back", chunk2);
+            }
+        } finally {
+            closeShards(shard);
+        }
+    }
+
     private static final String NESTED_KEYWORD_MAPPING = """
         {
           "dynamic": "strict",

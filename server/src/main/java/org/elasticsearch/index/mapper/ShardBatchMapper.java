@@ -9,6 +9,7 @@
 
 package org.elasticsearch.index.mapper;
 
+import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.action.bulk.BulkItemRequest;
 import org.elasticsearch.action.bulk.ShardBatchIndexer;
@@ -65,16 +66,25 @@ public final class ShardBatchMapper {
      * Result of {@link #resolveMappers(SourceSchema, MappingLookup, IndexSettings)}.
      *
      * <p>{@code columnMappers} holds one entry per schema leaf; a {@code null} entry means the column is
-     * silently ignored (nearest parent has {@code dynamic=false}) or the leaf is owned by a group mapper
-     * and will be dispatched via {@code columnGroups} instead.
+     * silently ignored (nearest parent has {@code dynamic=false}, or {@code dynamic=true} with no mapper —
+     * see {@code dynamicUnmappedLeaves}) or the leaf is owned by a group mapper and will be dispatched via
+     * {@code columnGroups} instead.
      *
      * <p>{@code columnGroups} holds one entry per group mapper (e.g. {@code flattened}), ordered by the
      * first schema leaf that mapped to that group.
+     *
+     * <p>{@code dynamicUnmappedLeaves} holds the leaf indexes that resolved under a {@code dynamic=true}
+     * parent with no mapper — the sequential path would dynamically create a mapper for these, which
+     * {@link #resolveMappers} cannot do (no value has been seen yet at that point). Treating them as
+     * silently ignored is only safe for a chunk where the leaf genuinely has no value; {@link
+     * #mapColumnBatch} checks this per chunk against the leaf's real column data and falls back that chunk
+     * (and everything after it, per the usual chunk-fallback contract) if the leaf is actually present.
      */
     public record BatchMapperResolution(
         FieldMapper[] columnMappers,
         ColumnGroupResolution[] columnGroups,
-        AliasedLeafResolution[] aliasedLeaves
+        AliasedLeafResolution[] aliasedLeaves,
+        int[] dynamicUnmappedLeaves
     ) {}
 
     /**
@@ -90,6 +100,7 @@ public final class ShardBatchMapper {
     public record AliasedLeafResolution(FieldMapper mapper, int[] leafIndexes) {}
 
     private static final AliasedLeafResolution[] EMPTY_ALIASED_LEAVES = new AliasedLeafResolution[0];
+    private static final int[] EMPTY_DYNAMIC_UNMAPPED_LEAVES = new int[0];
 
     /** Accumulates per-leaf-mapper aliasing groups, keyed by full path, in first-seen order. */
     private static final class AliasedLeafGroup {
@@ -161,6 +172,9 @@ public final class ShardBatchMapper {
         // Aliasing groups accumulated for strictly-columnar indices; see the mode-gating note below. Allocated
         // lazily since aliasing is rare.
         LinkedHashMap<String, AliasedLeafGroup> aliasedLeafGroups = null;
+        // Leaf indexes resolved under a dynamic=true parent with no mapper. Allocated lazily; see the
+        // dynamicUnmappedLeaves javadoc on BatchMapperResolution.
+        List<Integer> dynamicUnmappedLeaves = null;
 
         for (int leaf = 0; leaf < leafCount; leaf++) {
             final String fullPath = schema.getFullPath(leaf);
@@ -224,6 +238,20 @@ public final class ShardBatchMapper {
                     columnMappers[leaf] = null;
                     continue;
                 }
+                if (parentDynamic == ObjectMapper.Dynamic.TRUE) {
+                    // The sequential path would dynamically create a mapper here from the value it sees; this
+                    // method only has the schema, not values, so it cannot infer a type or build a mapping
+                    // update. Rather than fail the whole batch, treat the leaf as silently ignored here — like
+                    // dynamic=false — and defer the real safety check to mapColumnBatch, which has the actual
+                    // per-chunk column data: a chunk where this leaf is genuinely absent is safe to batch-index
+                    // (there is nothing to omit), while a chunk where it has a value must still fall back.
+                    if (dynamicUnmappedLeaves == null) {
+                        dynamicUnmappedLeaves = new ArrayList<>();
+                    }
+                    dynamicUnmappedLeaves.add(leaf);
+                    columnMappers[leaf] = null;
+                    continue;
+                }
                 if (parentDynamic == ObjectMapper.Dynamic.FLATTENED) {
                     final FieldMapper sink = unmappedSink(lookup, indexSettings);
                     if (sink == null) {
@@ -238,6 +266,8 @@ public final class ShardBatchMapper {
                     columnMappers[leaf] = null;
                     continue;
                 }
+                // STRICT (sequential path raises strict_dynamic_mapping_exception) and RUNTIME (creates a
+                // runtime field, a different mechanism) are not handled above and fall back unconditionally.
                 logger.debug("batch indexing disabled: unmapped leaf [{}] under dynamic={} parent", fullPath, parentDynamic);
                 return null;
             }
@@ -307,7 +337,16 @@ public final class ShardBatchMapper {
                 aliasedLeaves[i++] = new AliasedLeafResolution(group.mapper, indexes);
             }
         }
-        return new BatchMapperResolution(columnMappers, columnGroups, aliasedLeaves);
+        final int[] dynamicUnmapped;
+        if (dynamicUnmappedLeaves == null) {
+            dynamicUnmapped = EMPTY_DYNAMIC_UNMAPPED_LEAVES;
+        } else {
+            dynamicUnmapped = new int[dynamicUnmappedLeaves.size()];
+            for (int i = 0; i < dynamicUnmapped.length; i++) {
+                dynamicUnmapped[i] = dynamicUnmappedLeaves.get(i);
+            }
+        }
+        return new BatchMapperResolution(columnMappers, columnGroups, aliasedLeaves, dynamicUnmapped);
     }
 
     /**
@@ -440,6 +479,21 @@ public final class ShardBatchMapper {
             // Invoke field mappers
             final SourceBatch sourceBatch = indexBatch.sourceBatch();
             if (sourceBatch instanceof EscfBatch escfChunk) {
+                // A dynamic=true leaf with no mapper was tentatively ignored at resolve time (no chunk data was
+                // available then). Check the real, chunk-local column: if it's genuinely absent throughout this
+                // chunk there is nothing to omit, so batch-indexing it is correct; if it has a value, omitting it
+                // would be wrong, so bail out here and let the existing catch below fall this chunk (and
+                // everything after it) back to the sequential path, which handles dynamic mapping correctly.
+                for (int leaf : resolution.dynamicUnmappedLeaves()) {
+                    final EscfColumn column = escfChunk.column(leaf);
+                    if (column.presentDocs().nextDoc() != DocIdSetIterator.NO_MORE_DOCS) {
+                        throw new UnsupportedOperationException(
+                            "mapColumnBatch: leaf ["
+                                + escfChunk.schema().getFullPath(leaf)
+                                + "] requires a dynamic mapping update and has a value in this chunk"
+                        );
+                    }
+                }
                 final FieldMapper[] columnMappers = resolution.columnMappers();
                 for (int c = 0; c < columnMappers.length; c++) {
                     final FieldMapper mapper = columnMappers[c];

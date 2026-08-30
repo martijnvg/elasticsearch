@@ -167,8 +167,34 @@ public class ShardBatchMapperResolveTests extends MapperServiceTestCase {
         assertNull(resolution.columnMappers()[schema.findLeaf("unknown", 0)]);
     }
 
-    public void testMissingLeafUnderDynamicTrueFallsBack() throws IOException {
+    /**
+     * An unmapped leaf under a dynamic=true parent is tentatively treated like dynamic=false at resolve
+     * time — {@code resolveMappers} has no value to infer a type from, only the schema. Whether that's
+     * actually safe is checked separately, per chunk, against the leaf's real column data (see
+     * {@code ShardBatchMapperParseTests}); resolve time only records the leaf as a candidate.
+     */
+    public void testMissingLeafUnderDynamicTrueIsIgnoredAtResolveTime() throws IOException {
         MapperService ms = mapper(mapping(b -> { b.startObject("known").field("type", "keyword").endObject(); }));
+        SourceSchema schema = schemaOf("known", "unknown");
+        BatchMapperResolution resolution = ShardBatchMapper.resolveMappers(schema, ms.mappingLookup(), indexSettings);
+        assertNotNull(resolution);
+        assertNotNull(resolution.columnMappers()[schema.findLeaf("known", 0)]);
+        assertNull(resolution.columnMappers()[schema.findLeaf("unknown", 0)]);
+        assertArrayEquals(new int[] { schema.findLeaf("unknown", 0) }, resolution.dynamicUnmappedLeaves());
+    }
+
+    /**
+     * dynamic=strict is not eligible for the tentative-ignore treatment: the sequential path raises
+     * strict_dynamic_mapping_exception for an unmapped field there rather than creating or silently
+     * dropping it, so resolveMappers must keep falling back for the whole batch, unchanged.
+     */
+    public void testMissingLeafUnderDynamicStrictFallsBack() throws IOException {
+        MapperService ms = mapper(topMapping(b -> {
+            b.field("dynamic", "strict");
+            b.startObject("properties");
+            b.startObject("known").field("type", "keyword").endObject();
+            b.endObject();
+        }));
         BatchMapperResolution resolution = ShardBatchMapper.resolveMappers(schemaOf("known", "unknown"), ms.mappingLookup(), indexSettings);
         assertNull(resolution);
     }

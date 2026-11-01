@@ -83,6 +83,7 @@ import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.fielddata.SourceValueFetcherSortedBinaryIndexFieldData;
 import org.elasticsearch.index.fielddata.StoredFieldSortedBinaryIndexFieldData;
 import org.elasticsearch.index.fielddata.plain.BytesBinaryIndexFieldData;
+import org.elasticsearch.index.fielddata.plain.ColumnarKeywordIndexFieldData;
 import org.elasticsearch.index.fielddata.plain.SortedSetOrdinalsIndexFieldData;
 import org.elasticsearch.index.mapper.blockloader.BlockLoaderFunctionConfig;
 import org.elasticsearch.index.mapper.blockloader.docvalues.BytesRefsFromBinaryBlockLoader;
@@ -881,6 +882,11 @@ public final class KeywordFieldMapper extends FieldMapper {
             public boolean isBinary() {
                 return binaryFormat != null;
             }
+
+            /** Whether the values go to the ColumNAR codec, which writes each segment's column as it sees fit. */
+            public boolean isColumnar() {
+                return this == BINARY_COLUMNAR_PAYLOAD || this == BINARY_COLUMNAR_SINGLE_VALUE;
+            }
         }
 
         /** Where this field's doc values are written; see {@link DocValuesDiskFormat}. */
@@ -1308,14 +1314,14 @@ public final class KeywordFieldMapper extends FieldMapper {
 
             if (operation == FielddataOperation.SEARCH) {
                 failIfNoDocValues();
-                return fieldDataFromDocValues();
+                return fieldDataFromDocValues(fieldDataContext);
             }
             if (operation != FielddataOperation.SCRIPT) {
                 throw new IllegalStateException("unknown operation [" + operation.name() + "]");
             }
 
             if (hasDocValues()) {
-                return fieldDataFromDocValues();
+                return fieldDataFromDocValues(fieldDataContext);
             }
             if (isSyntheticSourceEnabled()) {
                 if (false == isStored()) {
@@ -1347,7 +1353,19 @@ public final class KeywordFieldMapper extends FieldMapper {
             );
         }
 
-        private IndexFieldData.Builder fieldDataFromDocValues() {
+        private IndexFieldData.Builder fieldDataFromDocValues(FieldDataContext fieldDataContext) {
+            if (diskFormat.isColumnar() && fieldDataContext.indexSettings() != null) {
+                // A column's segments each decide whether it has a dictionary, so whether this field can offer ordinals
+                // is settled against the reader an aggregation searches; see ColumnarKeywordIndexFieldData.
+                return new ColumnarKeywordIndexFieldData.Builder(
+                    name(),
+                    CoreValuesSourceType.KEYWORD,
+                    KeywordDocValuesField::new,
+                    indexVersion,
+                    fieldDataContext.indexSettings(),
+                    binaryFormat()
+                );
+            }
             if (usesBinaryDocValues()) {
                 return new BytesBinaryIndexFieldData.Builder(
                     name(),

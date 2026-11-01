@@ -157,6 +157,33 @@ public final class IndexSettings {
     );
 
     /**
+     * Whether aggregations may read a columnar keyword field through global ordinals. When a searcher's segments all
+     * qualify, the field is offered to aggregations as if it had ordinals, so {@code terms} and the other aggregations
+     * that build on them take their global ordinals paths. Otherwise the field is read by value, as it is when this is
+     * off.
+     */
+    public static final Setting<Boolean> COLUMNAR_GLOBAL_ORDINALS_ENABLED_SETTING = Setting.boolSetting(
+        "index.search.columnar_global_ordinals.enabled",
+        false,
+        Property.Dynamic,
+        Property.IndexScope
+    );
+
+    /**
+     * The most values a segment may hold that its column does not name with a term in order for the segment to be
+     * read through ordinals: a plain column's values, or the values that escaped a dictionary. Those have to be read
+     * and ordered when the segment is first aggregated on, which is cheap for a freshly flushed segment and is held to
+     * this bound so it stays cheap for any other. A segment past it reads the field by value for the whole searcher.
+     */
+    public static final Setting<Integer> COLUMNAR_GLOBAL_ORDINALS_MAX_MATERIALIZED_VALUES_SETTING = Setting.intSetting(
+        "index.search.columnar_global_ordinals.max_materialized_values",
+        1_000_000,
+        0,
+        Property.Dynamic,
+        Property.IndexScope
+    );
+
+    /**
      * Index setting describing the maximum value of from + size on an individual inner hit definition or
      * top hits aggregation. The default maximum of 100 is defensive for the reason that the number of inner hit responses
      * and number of top hits buckets returned is unbounded. Profile your cluster when increasing this setting.
@@ -1559,6 +1586,8 @@ public final class IndexSettings {
 
     private volatile boolean warmerEnabled;
     private volatile int maxResultWindow;
+    private volatile boolean columnarGlobalOrdinalsEnabled;
+    private volatile int columnarGlobalOrdinalsMaxMaterializedValues;
     private volatile int maxInnerResultWindow;
     private volatile int maxRescoreWindow;
     private volatile int maxDocvalueFields;
@@ -1782,6 +1811,8 @@ public final class IndexSettings {
         retentionLeaseMillis = scopedSettings.get(INDEX_SOFT_DELETES_RETENTION_LEASE_PERIOD_SETTING).millis();
         warmerEnabled = scopedSettings.get(INDEX_WARMER_ENABLED_SETTING);
         maxResultWindow = scopedSettings.get(MAX_RESULT_WINDOW_SETTING);
+        columnarGlobalOrdinalsEnabled = scopedSettings.get(COLUMNAR_GLOBAL_ORDINALS_ENABLED_SETTING);
+        columnarGlobalOrdinalsMaxMaterializedValues = scopedSettings.get(COLUMNAR_GLOBAL_ORDINALS_MAX_MATERIALIZED_VALUES_SETTING);
         maxInnerResultWindow = scopedSettings.get(MAX_INNER_RESULT_WINDOW_SETTING);
         maxRescoreWindow = scopedSettings.get(MAX_RESCORE_WINDOW_SETTING);
         maxDocvalueFields = scopedSettings.get(MAX_DOCVALUE_FIELDS_SEARCH_SETTING);
@@ -1930,6 +1961,11 @@ public final class IndexSettings {
         scopedSettings.addSettingsUpdateConsumer(INDEX_TRANSLOG_DURABILITY_SETTING, this::setTranslogDurability);
         scopedSettings.addSettingsUpdateConsumer(INDEX_TRANSLOG_SYNC_INTERVAL_SETTING, this::setTranslogSyncInterval);
         scopedSettings.addSettingsUpdateConsumer(MAX_RESULT_WINDOW_SETTING, this::setMaxResultWindow);
+        scopedSettings.addSettingsUpdateConsumer(COLUMNAR_GLOBAL_ORDINALS_ENABLED_SETTING, this::setColumnarGlobalOrdinalsEnabled);
+        scopedSettings.addSettingsUpdateConsumer(
+            COLUMNAR_GLOBAL_ORDINALS_MAX_MATERIALIZED_VALUES_SETTING,
+            this::setColumnarGlobalOrdinalsMaxMaterializedValues
+        );
         scopedSettings.addSettingsUpdateConsumer(MAX_INNER_RESULT_WINDOW_SETTING, this::setMaxInnerResultWindow);
         scopedSettings.addSettingsUpdateConsumer(MAX_RESCORE_WINDOW_SETTING, this::setMaxRescoreWindow);
         scopedSettings.addSettingsUpdateConsumer(MAX_DOCVALUE_FIELDS_SEARCH_SETTING, this::setMaxDocvalueFields);
@@ -2288,6 +2324,30 @@ public final class IndexSettings {
 
     private void setMaxResultWindow(int maxResultWindow) {
         this.maxResultWindow = maxResultWindow;
+    }
+
+    /**
+     * Whether aggregations may read a columnar keyword field through global ordinals, see
+     * {@link #COLUMNAR_GLOBAL_ORDINALS_ENABLED_SETTING}.
+     */
+    public boolean isColumnarGlobalOrdinalsEnabled() {
+        return columnarGlobalOrdinalsEnabled;
+    }
+
+    private void setColumnarGlobalOrdinalsEnabled(boolean columnarGlobalOrdinalsEnabled) {
+        this.columnarGlobalOrdinalsEnabled = columnarGlobalOrdinalsEnabled;
+    }
+
+    /**
+     * The most values a segment may have to have ordered for it to be read through ordinals, see
+     * {@link #COLUMNAR_GLOBAL_ORDINALS_MAX_MATERIALIZED_VALUES_SETTING}.
+     */
+    public int getColumnarGlobalOrdinalsMaxMaterializedValues() {
+        return columnarGlobalOrdinalsMaxMaterializedValues;
+    }
+
+    private void setColumnarGlobalOrdinalsMaxMaterializedValues(int columnarGlobalOrdinalsMaxMaterializedValues) {
+        this.columnarGlobalOrdinalsMaxMaterializedValues = columnarGlobalOrdinalsMaxMaterializedValues;
     }
 
     /**

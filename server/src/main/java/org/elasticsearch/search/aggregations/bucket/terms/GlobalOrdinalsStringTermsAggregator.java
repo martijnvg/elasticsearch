@@ -70,6 +70,15 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
     protected int segmentsWithSingleValuedOrds = 0;
     protected int segmentsWithMultiValuedOrds = 0;
 
+    /**
+     * Upper bound on the number of global ordinals for which {@link RemapGlobalOrds} keeps a dense
+     * global ordinal to bucket ordinal cache. Remapping keeps the sub-aggregation state proportional
+     * to the buckets actually collected, but hashing every hit is a large part of the collection cost.
+     * Below this bound the cache costs at most 256kb and avoids the hash for all but the first hit
+     * of each term.
+     */
+    static final long MAX_CACHED_BUCKET_ORDS = 1 << 16;
+
     public interface GlobalOrdLookupFunction {
         BytesRef apply(long ord) throws IOException;
     }
@@ -621,6 +630,17 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
         private final LongKeyedBucketOrds bucketOrds;
         private final boolean excludeDeletedDocs;
         private final ResultStrategy<R, B, TB> collectionStrategy;
+        /**
+         * Whether to remember the bucket ordinal of each global ordinal in {@link #bucketOrdCache}.
+         * Only possible when collecting from a single owning bucket.
+         */
+        private final boolean cacheBucketOrds;
+        /**
+         * Bucket ordinal plus one for each global ordinal, or {@code 0} if it hasn't been collected yet.
+         * Bucket ordinals never change once assigned, so this lets every hit after the first skip the
+         * hash lookup in {@link #bucketOrds}. Allocated when the first segment is ready.
+         */
+        private IntArray bucketOrdCache;
 
         private RemapGlobalOrds(
             ResultStrategy<R, B, TB> collectionStrategy,
@@ -630,6 +650,7 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
             bucketOrds = LongKeyedBucketOrds.buildForValueRange(bigArrays(), cardinality, 0, valueCount - 1);
             this.excludeDeletedDocs = excludeDeletedDocs;
             this.collectionStrategy = collectionStrategy;
+            this.cacheBucketOrds = cardinality == CardinalityUpperBound.ONE && valueCount <= MAX_CACHED_BUCKET_ORDS;
         }
 
         @Override
@@ -643,11 +664,26 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
         }
 
         @Override
-        void globalOrdsReady(SortedSetDocValues globalOrds) {}
+        void globalOrdsReady(SortedSetDocValues globalOrds) {
+            if (cacheBucketOrds && bucketOrdCache == null) {
+                bucketOrdCache = bigArrays().newIntArray(valueCount, true);
+            }
+        }
 
         @Override
         void collectGlobalOrd(long owningBucketOrd, int doc, long globalOrd, LeafBucketCollector sub) throws IOException {
+            if (bucketOrdCache != null) {
+                assert owningBucketOrd == 0;
+                int cached = bucketOrdCache.get(globalOrd);
+                if (cached != 0) {
+                    collectExistingBucket(sub, doc, cached - 1);
+                    return;
+                }
+            }
             long bucketOrd = bucketOrds.add(owningBucketOrd, globalOrd);
+            if (bucketOrdCache != null) {
+                bucketOrdCache.set(globalOrd, Math.toIntExact((bucketOrd < 0 ? -1 - bucketOrd : bucketOrd) + 1));
+            }
             if (bucketOrd < 0) {
                 bucketOrd = -1 - bucketOrd;
                 collectExistingBucket(sub, doc, bucketOrd);
@@ -707,7 +743,7 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
 
         @Override
         public void close() {
-            bucketOrds.close();
+            Releasables.close(bucketOrds, bucketOrdCache);
         }
 
         @Override

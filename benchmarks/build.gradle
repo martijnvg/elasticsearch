@@ -144,30 +144,51 @@ tasks.register("copyPainless", Copy) {
   into "${buildDir}/plugins/painless"
 }
 
-tasks.named("run").configure {
-  executable = "${buildParams.runtimeJavaHome.get()}/bin/java" + (OS.current() == OS.WINDOWS ? '.exe' : '')
-  dependsOn "copyExpression", "copyPainless", configurations.nativeLib, ":libs:native:native-libraries:extractLibs"
-  systemProperty 'plugins.dir', "${buildDir}/plugins"
-  systemProperty 'tests.index', "${buildDir}/index"
-  def nativeLibsPath = TestUtil.getTestLibraryPath(file("../libs/native/libraries/build/platform/").toString())
-  systemProperty 'es.nativelibs.path', nativeLibsPath
+def nativeLibsPath = TestUtil.getTestLibraryPath(file("../libs/native/libraries/build/platform/").toString())
+// Without this the vectorization providers fall back to their scalar implementations, so a benchmark
+// over vectorized code measures something the product never runs. Needed on the forked VMs, which are
+// where the benchmark bodies execute, as well as on the harness that runs them.
+def vectorArgs = buildParams.getRuntimeJavaVersion().map { it.majorVersion.toInteger() }.get() >= 21
+  ? ' --add-modules=jdk.incubator.vector'
+  : ''
+
+// The JVM that a benchmark runs in, whether JMH's harness or a benchmark's own main.
+def configureBenchmarkJvm = { JavaExec task ->
+  task.executable = "${buildParams.runtimeJavaHome.get()}/bin/java" + (OS.current() == OS.WINDOWS ? '.exe' : '')
+  task.dependsOn configurations.nativeLib, ":libs:native:native-libraries:extractLibs"
+  task.systemProperty 'es.nativelibs.path', nativeLibsPath
   // Arrow's MemoryUtil reflects into java.nio.Buffer.address during static init; the parquet
   // format reader transitively triggers this via BlockFactory.arrowAllocator(). Mirrors the
   // flag already set on the test task above and on :x-pack:plugin:esql-datasource-parquet:test.
-  jvmArgs '--add-opens=java.base/java.nio=ALL-UNNAMED'
-  jvmArgs '--enable-native-access=ALL-UNNAMED'
-  jvmArgs '-Dorg.apache.lucene.vectorization.upperJavaFeatureVersion=' + buildParams.getRuntimeJavaVersion().map { it.majorVersion }.get()
-  // Without this the vectorization providers fall back to their scalar implementations, so a benchmark
-  // over vectorized code measures something the product never runs. Needed on the forked VMs, which are
-  // where the benchmark bodies execute, as well as on the harness that runs them.
-  def vectorArgs = buildParams.getRuntimeJavaVersion().map { it.majorVersion.toInteger() }.get() >= 21
-    ? ' --add-modules=jdk.incubator.vector'
-    : ''
+  task.jvmArgs '--add-opens=java.base/java.nio=ALL-UNNAMED'
+  task.jvmArgs '--enable-native-access=ALL-UNNAMED'
+  task.jvmArgs '-Dorg.apache.lucene.vectorization.upperJavaFeatureVersion=' + buildParams.getRuntimeJavaVersion().map { it.majorVersion }.get()
   if (vectorArgs) {
-    jvmArgs '--add-modules=jdk.incubator.vector'
+    task.jvmArgs '--add-modules=jdk.incubator.vector'
   }
+}
+
+tasks.named("run").configure {
+  configureBenchmarkJvm(it)
+  dependsOn "copyExpression", "copyPainless"
+  systemProperty 'plugins.dir', "${buildDir}/plugins"
+  systemProperty 'tests.index', "${buildDir}/index"
   // Forward es.nativelibs.path to JMH forked VMs via default jvmArgsAppend
   args '-jvmArgsAppend', "-Des.nativelibs.path=${nativeLibsPath}${vectorArgs}"
+}
+
+// Runs a benchmark that has its own main rather than going through JMH, such as one that times whole rounds with
+// System.nanoTime: ./gradlew -p benchmarks runMain -PbenchmarkClass=<fully qualified class> --args '<its arguments>'
+tasks.register("runMain", JavaExec) {
+  configureBenchmarkJvm(it)
+  description = 'Runs the benchmark class named by -PbenchmarkClass through its own main method.'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = providers.gradleProperty('benchmarkClass')
+  // Deep enough for the stacks of a search, which the flight recorder would otherwise cut at 64 frames in flame graphs.
+  jvmArgs '-XX:FlightRecorderOptions:stackdepth=512'
+  // Records where inlined methods are at every instruction, not only at safepoints, so a flame graph credits a sample
+  // to the method that was running rather than to whichever inlined method has the nearest safepoint.
+  jvmArgs '-XX:+UnlockDiagnosticVMOptions', '-XX:+DebugNonSafepoints'
 }
 
 tasks.named('test').configure {

@@ -30,6 +30,7 @@ import org.elasticsearch.index.analysis.NameOrDefinition;
 import org.elasticsearch.index.analysis.NamedAnalyzer;
 import org.elasticsearch.index.cache.bitset.BitsetFilterCache;
 import org.elasticsearch.index.fielddata.IndexFieldData;
+import org.elasticsearch.index.fielddata.ReaderDependentOrdinalsFieldData;
 import org.elasticsearch.index.mapper.DocCountFieldMapper;
 import org.elasticsearch.index.mapper.MappedFieldType;
 import org.elasticsearch.index.mapper.NestedLookup;
@@ -103,7 +104,7 @@ public abstract class AggregationContext implements Releasable {
             // The field is unmapped
             return null;
         }
-        return new FieldContext(field, buildFieldData(ft), ft);
+        return new FieldContext(field, fieldDataForSearcher(ft), ft);
     }
 
     /**
@@ -134,7 +135,20 @@ public abstract class AggregationContext implements Releasable {
      * Lookup the context for an already resolved field type.
      */
     public final FieldContext buildFieldContext(MappedFieldType ft) {
-        return new FieldContext(ft.name(), buildFieldData(ft), ft);
+        return new FieldContext(ft.name(), fieldDataForSearcher(ft), ft);
+    }
+
+    /**
+     * The field data to aggregate {@code ft} with. Field data whose ordinals depend on the reader is settled against the
+     * reader this context searches here, before any aggregation is built, so every aggregation of the request sees the
+     * field the same way.
+     */
+    private IndexFieldData<?> fieldDataForSearcher(MappedFieldType ft) {
+        final IndexFieldData<?> fieldData = buildFieldData(ft);
+        if (fieldData instanceof ReaderDependentOrdinalsFieldData readerDependent && searcher() != null) {
+            return readerDependent.forReader(searcher().getIndexReader());
+        }
+        return fieldData;
     }
 
     /**

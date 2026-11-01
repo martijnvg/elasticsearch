@@ -122,6 +122,15 @@ public interface StringColumnSource {
     BytesRef slotAt(int slot) throws IOException;
 
     /**
+     * The value address of one slot of the document these values are positioned on, which is how
+     * {@link #reader()} names that slot. The bound is {@link #slotCount}, as for {@link #slotAt}.
+     *
+     * <p>Here so a caller that keeps something per value, such as an ordinal it worked out once for the
+     * segment, can find it for a document's slots without the column decoding them.
+     */
+    long slotAddress(int slot) throws IOException;
+
+    /**
      * How many non-null values the document holds; when exactly one, its length in bytes is left in
      * {@code length[0]}. Unlike {@link #nonNullValues} no value is decoded.
      */

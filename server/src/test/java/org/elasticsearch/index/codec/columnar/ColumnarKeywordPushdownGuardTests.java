@@ -614,6 +614,11 @@ public class ColumnarKeywordPushdownGuardTests extends ESTestCase {
         }
 
         @Override
+        public long slotAddress(int slot) throws IOException {
+            return column.slotAddress(slot);
+        }
+
+        @Override
         public int nonNullLength(int[] length) throws IOException {
             return column.nonNullLength(length);
         }

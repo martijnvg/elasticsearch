@@ -201,13 +201,18 @@ public final class ColumnarStringBinaryDocValues extends BinaryDocValues impleme
 
     @Override
     public BytesRef slotAt(int slot) throws IOException {
+        return reader.valueAt(slotAddress(slot));
+    }
+
+    @Override
+    public long slotAddress(int slot) throws IOException {
         final int rank = iterator.rank();
         if (rank != firstAddressRank) {
             // Held so that reading a document's slots one at a time costs one address lookup, not one a slot.
             firstAddressRank = rank;
             firstAddress = reader.firstValueAddress(rank);
         }
-        return reader.valueAt(firstAddress + slot);
+        return firstAddress + slot;
     }
 
     @Override

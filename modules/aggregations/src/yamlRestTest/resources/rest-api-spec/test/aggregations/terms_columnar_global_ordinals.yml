@@ -1,0 +1,92 @@
+setup:
+  - requires:
+      cluster_features: [ "search.aggs.columnar_global_ordinals" ]
+      reason: "columnar keyword fields can be read through global ordinals"
+  - do:
+      indices.create:
+        index: test
+        body:
+          settings:
+            number_of_shards: 1
+            index.mode: columnar
+            index.search.columnar_global_ordinals.enabled: true
+          mappings:
+            properties:
+              kw:
+                type: keyword
+
+  # Two refreshes, for two segments.
+  - do:
+      bulk:
+        index: test
+        refresh: true
+        body:
+          - { "index": { } }
+          - { "kw": "a" }
+          - { "index": { } }
+          - { "kw": "a" }
+          - { "index": { } }
+          - { "kw": "b" }
+          - { "index": { } }
+          - { "kw": [ "a", "c", "a" ] }
+  - do:
+      bulk:
+        index: test
+        refresh: true
+        body:
+          - { "index": { } }
+          - { "kw": "c" }
+          - { "index": { } }
+          - { "kw": "unique-1" }
+          - { "index": { } }
+          - { "other": 1 }
+
+---
+terms are read through global ordinals:
+  - do:
+      search:
+        index: test
+        body:
+          size: 0
+          profile: true
+          aggs:
+            t:
+              terms:
+                field: kw
+
+  - length: { aggregations.t.buckets: 4 }
+  - match: { aggregations.t.buckets.0.key: "a" }
+  - match: { aggregations.t.buckets.0.doc_count: 3 }
+  - match: { aggregations.t.buckets.1.key: "c" }
+  - match: { aggregations.t.buckets.1.doc_count: 2 }
+  - match: { aggregations.t.buckets.2.key: "b" }
+  - match: { aggregations.t.buckets.2.doc_count: 1 }
+  - match: { aggregations.t.buckets.3.key: "unique-1" }
+  - match: { aggregations.t.buckets.3.doc_count: 1 }
+  - match: { profile.shards.0.aggregations.0.type: "/GlobalOrdinalsStringTermsAggregator.*/" }
+
+---
+terms are read by value when the setting is off:
+  - do:
+      indices.put_settings:
+        index: test
+        body:
+          index.search.columnar_global_ordinals.enabled: false
+
+  - do:
+      search:
+        index: test
+        body:
+          size: 0
+          profile: true
+          aggs:
+            t:
+              terms:
+                field: kw
+
+  - length: { aggregations.t.buckets: 4 }
+  - match: { aggregations.t.buckets.0.key: "a" }
+  - match: { aggregations.t.buckets.0.doc_count: 3 }
+  - match: { aggregations.t.buckets.1.key: "c" }
+  - match: { aggregations.t.buckets.1.doc_count: 2 }
+  - match: { profile.shards.0.aggregations.0.type: "MapStringTermsAggregator" }

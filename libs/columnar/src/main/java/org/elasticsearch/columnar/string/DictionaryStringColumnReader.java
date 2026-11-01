@@ -237,6 +237,28 @@ public final class DictionaryStringColumnReader extends StringColumnReader {
     }
 
     /**
+     * The value at {@code valueAddress} as {@link StringColumnSource#denseTermOrdinal} names a document's one value: the
+     * dense ordinal of its term, {@link StringColumnSource#NO_VALUE} when the slot is null, or
+     * {@link StringColumnSource#ESCAPED} when no term names it. Dense ordinals are in term order, so a caller can order
+     * a document's values by them without reading a term.
+     */
+    public int denseOrdinalAt(long valueAddress) throws IOException {
+        final int ordinal = ordinalAt(valueAddress);
+        if (ordinal == StringColumnMetadata.Dictionary.NULL_ORDINAL) {
+            return StringColumnSource.NO_VALUE;
+        }
+        if (ordinal == escapeOrdinal) {
+            return StringColumnSource.ESCAPED;
+        }
+        return ordinal - StringColumnMetadata.Dictionary.FIRST_TERM_ORDINAL;
+    }
+
+    /** The term at a dense ordinal, which {@link #denseOrdinalAt} answers. The returned {@link BytesRef} is {@code dst}. */
+    public BytesRef denseTermAt(int denseOrdinal, BytesRef dst) throws IOException {
+        return termAt(denseOrdinal + StringColumnMetadata.Dictionary.FIRST_TERM_ORDINAL, dst);
+    }
+
+    /**
      * The extreme value, decided over ordinals. The dictionary is in term order, so the largest ordinal a document
      * holds names its largest value and the smallest its smallest - the terms are never read to find out, and only the
      * one that wins is resolved.
@@ -268,6 +290,26 @@ public final class DictionaryStringColumnReader extends StringColumnReader {
     /** The value behind the escape marker at {@code valueAddress}, for a consumer that took ordinals. */
     public BytesRef resolveEscape(long valueAddress, BytesRef dst) throws IOException {
         escapes.get(escapeRankOf(valueAddress), dst);
+        return dst;
+    }
+
+    /**
+     * How many values escaped before the escaped value at {@code valueAddress}, so a caller that worked something out
+     * once for each escaped value can find it again. The answer runs from zero up to, but not including,
+     * {@link #escapeCount()}. Cheapest when asked in ascending address order, as a pass over the documents does.
+     */
+    public long escapeRank(long valueAddress) throws IOException {
+        assert ordinalAt(valueAddress) == escapeOrdinal : "the value at [" + valueAddress + "] did not escape";
+        return escapeRankOf(valueAddress);
+    }
+
+    /**
+     * The escaped value of a given {@link #escapeRank}, read without walking the ordinals, so a caller can go through
+     * every escaped value once without knowing where any of them is.
+     */
+    public BytesRef escapeAt(long escapeRank, BytesRef dst) throws IOException {
+        assert escapeRank >= 0 && escapeRank < escapeCount : "escape rank [" + escapeRank + "] of " + escapeCount;
+        escapes.get(escapeRank, dst);
         return dst;
     }
 

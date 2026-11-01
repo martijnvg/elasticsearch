@@ -126,6 +126,8 @@ public final class IndexScopedSettings extends AbstractScopedSettings {
                 IndexSettings.INDEX_REFRESH_INTERVAL_SETTING,
                 IndexSettings.INDEX_FAST_REFRESH_SETTING,
                 IndexSettings.MAX_RESULT_WINDOW_SETTING,
+                IndexSettings.COLUMNAR_GLOBAL_ORDINALS_ENABLED_SETTING,
+                IndexSettings.COLUMNAR_GLOBAL_ORDINALS_MAX_MATERIALIZED_VALUES_SETTING,
                 IndexSettings.MAX_INNER_RESULT_WINDOW_SETTING,
                 IndexSettings.MAX_TOKEN_COUNT_SETTING,
                 IndexSettings.MAX_ANALYZE_CHAR_COUNT_SETTING,
